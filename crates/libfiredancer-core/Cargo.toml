@@ -1,9 +1,0 @@
-[package]
-name = "libfiredancer-core"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-
-
-[dev-dependencies]

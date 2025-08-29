@@ -1,0 +1,9 @@
+[package]
+name = "libfd-log"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+libfd_log_sys = { path = "../libfd_log_sys" }
+
+[dev-dependencies] 
