@@ -6,4 +6,6 @@ edition.workspace = true
 [dependencies]
 libfd_log_sys = { path = "../libfd_log_sys" }
 
-[dev-dependencies] 
+[dev-dependencies]
+libc = "0.2.175"
+test-case = "3.3.1"

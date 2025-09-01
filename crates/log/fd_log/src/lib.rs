@@ -178,6 +178,22 @@ impl FdLog {
     }
 }
 
+// FdLog::set_cpu("demo-cpu");
+#[macro_export]
+macro_rules! cpu {
+    ($($arg:tt)*) => {
+        $crate::FdLog::set_cpu(&format!($($arg)*))
+    };
+}
+
+// FdLog::set_thread("demo-thread");
+#[macro_export]
+macro_rules! thread {
+    ($($arg:tt)*) => {
+        $crate::FdLog::set_thread(&format!($($arg)*))
+    };
+}
+
 impl LogLevel {
     fn from_int(level: c_int) -> Self {
         match level {
@@ -194,13 +210,29 @@ impl LogLevel {
     }
 }
 
+#[macro_export]
+macro_rules! location_level {
+    ($logfile:ident, $level:expr) => {
+        $crate::FdLog::set_level_logfile($level);
+    };
+    ($stderr:ident, $level:expr) => {
+        $crate::FdLog::set_level_stderr($level);
+    };
+    ($flush:ident, $level:expr) => {
+        $crate::FdLog::set_level_flush($level);
+    };
+    ($core:ident, $level:expr) => {
+        $crate::FdLog::set_level_core($level);
+    };
+}
+
 /// Generic logging function that mimics the behavior of the `FD_LOG_*` C macros.
 ///
 /// Like `FD_LOG_*`, this will do the following:
 /// 1. Get the current timestamp
 /// 2. Format the message
 /// 3. Call the appropriate `fd_log_private_*` function
-pub fn fd_log_impl(level: LogLevel, file: &str, line: u32, func: &str, message: &str) {
+pub fn _fd_log(level: LogLevel, file: &str, line: u32, func: &str, message: &str) {
     let now = unsafe { libfd_log_sys::fd_log_wallclock() };
     let c_file = CString::new(file).unwrap_or_else(|_| CString::new("unknown").unwrap());
     let c_func = CString::new(func).unwrap_or_else(|_| CString::new("unknown").unwrap());
@@ -237,7 +269,7 @@ pub fn fd_log_impl(level: LogLevel, file: &str, line: u32, func: &str, message: 
 #[macro_export]
 macro_rules! fd_log_debug {
     ($($arg:tt)*) => {
-        $crate::fd_log_impl(
+        $crate::_fd_log(
             $crate::LogLevel::Debug,
             file!(),
             line!(),
@@ -250,7 +282,7 @@ macro_rules! fd_log_debug {
 #[macro_export]
 macro_rules! fd_log_info {
     ($($arg:tt)*) => {
-        $crate::fd_log_impl(
+        $crate::_fd_log(
             $crate::LogLevel::Info,
             file!(),
             line!(),
@@ -263,7 +295,7 @@ macro_rules! fd_log_info {
 #[macro_export]
 macro_rules! fd_log_notice {
     ($($arg:tt)*) => {
-        $crate::fd_log_impl(
+        $crate::_fd_log(
             $crate::LogLevel::Notice,
             file!(),
             line!(),
@@ -276,7 +308,7 @@ macro_rules! fd_log_notice {
 #[macro_export]
 macro_rules! fd_log_warning {
     ($($arg:tt)*) => {
-        $crate::fd_log_impl(
+        $crate::_fd_log(
             $crate::LogLevel::Warning,
             file!(),
             line!(),
@@ -289,7 +321,7 @@ macro_rules! fd_log_warning {
 #[macro_export]
 macro_rules! fd_log_error {
     ($($arg:tt)*) => {
-        $crate::fd_log_impl(
+        $crate::_fd_log(
             $crate::LogLevel::Error,
             file!(),
             line!(),
@@ -302,7 +334,7 @@ macro_rules! fd_log_error {
 #[macro_export]
 macro_rules! fd_log_critical {
     ($($arg:tt)*) => {
-        $crate::fd_log_impl(
+        $crate::_fd_log(
             $crate::LogLevel::Critical,
             file!(),
             line!(),
@@ -315,7 +347,7 @@ macro_rules! fd_log_critical {
 #[macro_export]
 macro_rules! fd_log_alert {
     ($($arg:tt)*) => {
-        $crate::fd_log_impl(
+        $crate::_fd_log(
             $crate::LogLevel::Alert,
             file!(),
             line!(),
@@ -328,7 +360,7 @@ macro_rules! fd_log_alert {
 #[macro_export]
 macro_rules! fd_log_emergency {
     ($($arg:tt)*) => {
-        $crate::fd_log_impl(
+        $crate::_fd_log(
             $crate::LogLevel::Emergency,
             file!(),
             line!(),
@@ -338,43 +370,95 @@ macro_rules! fd_log_emergency {
     };
 }
 
-/// Alias for `fd_log_error` (FD_LOG_ERR)
+/// Alias for `fd_log_debug` (FD_LOG_DEBUG)
 #[macro_export]
-macro_rules! fd_log_err {
+macro_rules! fd_dbg {
     ($($arg:tt)*) => {
-        fd_log_error!($($arg)*)
+        $crate::fd_log_debug!($($arg)*)
+    };
+}
+
+/// Alias for `fd_log_info` (FD_LOG_INFO)
+#[macro_export]
+macro_rules! fd_info {
+    ($($arg:tt)*) => {
+        $crate::fd_log_info!($($arg)*)
+    };
+}
+
+/// Alias for `fd_log_notice` (FD_LOG_NOTICE)
+#[macro_export]
+macro_rules! fd_notice {
+    ($($arg:tt)*) => {
+        $crate::fd_log_notice!($($arg)*)
+    };
+}
+
+/// Alias for `fd_log_warning` (FD_LOG_WARNING)
+#[macro_export]
+macro_rules! fd_warn {
+    ($($arg:tt)*) => {
+        $crate::fd_log_warning!($($arg)*)
+    };
+}
+
+/// Alias for `fd_log_error` (FD_LOG_ERR)
+///
+/// This will exit the program with a SIGABRT signal
+#[macro_export]
+macro_rules! fd_err {
+    ($($arg:tt)*) => {
+        $crate::fd_log_error!($($arg)*)
     };
 }
 
 /// Alias for `fd_log_emergency` (FD_LOG_EMERG)
+///
+/// This will abort the program with a SIGABRT signal
 #[macro_export]
-macro_rules! fd_log_emerg {
+macro_rules! fd_emerg {
     ($($arg:tt)*) => {
-        fd_log_emergency!($($arg)*)
+        $crate::fd_log_emergency!($($arg)*)
+    };
+}
+
+/// Alias for `fd_log_alert` (FD_LOG_ALERT)
+///
+/// This will abort the program with a SIGABRT signal
+#[macro_export]
+macro_rules! fd_alert {
+    ($($arg:tt)*) => {
+        $crate::fd_log_alert!($($arg)*)
     };
 }
 
 /// Alias for `fd_log_critical` (FD_LOG_CRIT)
+///
+/// This will abort the program with a SIGABRT signal
 #[macro_export]
-macro_rules! fd_log_crit {
+macro_rules! fd_crit {
     ($($arg:tt)*) => {
-        fd_log_critical!($($arg)*)
+        $crate::fd_log_critical!($($arg)*)
     };
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_case::test_case;
 
-    #[test]
-    fn test_log_levels() {
-        assert_eq!(LogLevel::Debug as i32, 0);
-        assert_eq!(LogLevel::Info as i32, 1);
-        assert_eq!(LogLevel::Emergency as i32, 7);
+    fn abort_handler() {
+        panic!("Abort handler called.");
+    }
+
+    fn sighandler() {
+        unsafe {
+            libc::signal(libc::SIGABRT, abort_handler as usize);
+        }
     }
 
     #[test]
-    fn test_log_functions() {
+    fn test_ids() {
         let _app_id = FdLog::app_id();
         let _thread_id = FdLog::thread_id();
         let _host_id = FdLog::host_id();
@@ -383,35 +467,44 @@ mod tests {
         let _tid = FdLog::tid();
         let _user_id = FdLog::user_id();
 
+        assert_eq!(_app_id, 0);
+        assert_eq!(_thread_id, 0);
+        assert_eq!(_host_id, 0);
+        assert_eq!(_group_id, 0);
+
+        assert_ne!(_cpu_id, 0);
+        assert_ne!(_tid, 0);
+        assert_ne!(_user_id, 0);
+
         let _wallclock = FdLog::wallclock_host();
-        let _colorize = FdLog::colorize();
+        assert_ne!(_wallclock, 0);
     }
 
-    #[test]
-    fn test_log_impl() {
-        fd_log_impl(
-            LogLevel::Info,
-            "test.rs",
-            42,
-            "test_function",
-            "This is a test message",
-        );
+    /// no `fd_log_private_2` level usage here since they'll nuke the process
+    #[test_case(true; "test_recoverable_colorized")]
+    fn test_recoverable(colorize: bool) {
+        FdLog::set_colorize(colorize);
+
+        fd_dbg!("Debug message; low prio");
+        fd_info!("Info message; value={}", 42);
+        fd_notice!("Notice message; medium priority");
+        fd_warn!("Warning message; medium-high priority");
     }
 
-    #[test]
-    fn test_macros() {
-        // no critical/alert/emergency since they'll nuke the process
-        fd_log_debug!("This is a debug message");
-        fd_log_info!("This is an info message with value: {}", 42);
-        fd_log_notice!("This is a notice");
-        fd_log_warning!("This is a warning");
-        fd_log_err!("This is an error message");
-    }
+    #[test_case(LogLevel::Error, "ERROR! SOMETHING HAPPENED"; "test_error")]
+    #[test_case(LogLevel::Critical, "CRITICAL! SOMETHING IS SERIOUSLY WRONG"; "test_critical")]
+    #[test_case(LogLevel::Alert, "RED ALERT! SOMETHING IS CRITICALLY WRONG"; "test_alert")]
+    #[test_case(LogLevel::Emergency, "EMERGENCY! SOMETHING IS CRITICALLY WRONG"; "test_emergency")]
+    #[should_panic]
+    fn test_unrecoverable(level: LogLevel, message: &str) {
+        sighandler();
 
-    #[test]
-    fn test_fd_danger_levels() {
-        fd_log_crit!("This is a critical message");
-        fd_log_alert!("This is an alert message");
-        fd_log_emerg!("This is an emergency message");
+        match level {
+            LogLevel::Emergency => fd_emerg!("{}", message),
+            LogLevel::Error => fd_err!("{}", message),
+            LogLevel::Alert => fd_alert!("{}", message),
+            LogLevel::Critical => fd_crit!("{}", message),
+            _ => (),
+        }
     }
 }

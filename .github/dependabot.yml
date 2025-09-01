@@ -1,0 +1,46 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "@joeymeere"
+    assignees:
+      - "@joeymeere"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      rust-toolchain:
+        patterns:
+          - "bindgen"
+          - "cc"
+          - "clang-sys"
+      dev-dependencies:
+        dependency-type: "development"
+        patterns:
+          - "*"
+      patch-updates:
+        update-types:
+          - "patch"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "@joeymeere"
+    assignees:
+      - "@joeymeere"
+    commit-message:
+      prefix: "ci"
+      include: "scope"

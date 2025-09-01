@@ -123,8 +123,6 @@ pub mod avg {
     /// Compute the average of two values without risk of intermediate overflow
     ///
     /// For integer types, this uses round-toward-negative-infinity semantics.
-    /// These implementations mirror Firedancer's inline functions.
-
     pub fn avg2_u8(x: u8, y: u8) -> u8 {
         ((x as u64 + y as u64) >> 1) as u8
     }

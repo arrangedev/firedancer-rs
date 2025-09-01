@@ -1,20 +1,41 @@
-# fd_utils
+# firedancer-rs
 
-A collection of FFI bindings for [Firedancer](https://github.com/firedancer-io/firedancer) utils.
+A collection of FFI bindings for [Firedancer](https://github.com/firedancer-io/firedancer). 
 
-This includes bindings for:
+## Goals
+
+## Non-Goals
+
+- Bindings for every firedancer module
+
+## Progress
+
+Currently, bindings are completed for a few components of [`utils`](https://github.com/firedancer-io/firedancer/blob/main/src/util/fd_util.h):
 
 - `net`
 - `bits`
 - `log`
 - `math`
 
-Eventually we'
+TODO (utils):
+
+- `env` 
+- `tpool`
+- `checkpt`
+- `tmpl`
+- `alloc`
+- `shmem`
+
+TODO (other):
+
+- `tango`
+- `waltz`
+- `ballet`
 
 ## License
 
-Same as Firedancer: [Apache 2.0](LICENSE).
+[Apache 2.0](LICENSE)
 
 ## Acknowledgments
 
-This project builds upon the excellent work of the [Firedancer team](https://jumpcrypto.com/firedancer/) at Jump Crypto. Firedancer is a high-performance validator client for Solana designed for speed, security, and independence.
+This project builds upon the work of Jump Crypto's [Firedancer](https://github.com/firedancer-io/firedancer) client, natively written in C. Give them your thanks and a star for their amazing work.

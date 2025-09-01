@@ -1,3 +1,5 @@
+#![allow(clippy::should_implement_trait)]
+
 //! Safe API for Firedancer net utils
 //!
 //! This wraps the FFI bindings provided by `libfdnet-sys` and provides safer

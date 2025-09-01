@@ -1,0 +1,157 @@
+name: Nightly
+
+on:
+  schedule:
+    # 2 AM UTC daily
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: Run Test Suite
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: [stable, beta, nightly]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-${{ matrix.rust }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.rust }}-cargo-
+
+      - name: Cache target directory
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-${{ matrix.rust }}-target-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.rust }}-target-
+
+      - name: Install system deps (ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang libclang-dev valgrind
+
+      - name: Install system deps (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install llvm
+
+      - name: Run all tests
+        run: make tests
+
+      - name: Run examples
+        run: make examples
+
+      - name: Build bindings
+        run: |
+          make bindings
+
+      - name: Build wrappers
+        run: |
+          make wrappers
+
+      - name: Test crates
+        run: |
+          make test-bits
+          make test-math
+          make test-log
+          make test-net
+
+  dep-check:
+    name: Check Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Install cargo-outdated
+        run: cargo install cargo-outdated
+
+      - name: Check outdated
+        run: cargo outdated --workspace
+
+      - name: Install cargo-machete
+        run: cargo install cargo-machete
+
+      - name: Check unused
+        run: cargo machete
+
+  undefined-behavior-scan:
+    name: Check for UB
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: nightly
+          components: rust-src
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-nightly-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-nightly-cargo-
+
+      - name: Cache target dir
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-nightly-target-miri-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-nightly-target-miri-
+            ${{ runner.os }}-nightly-target-
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang libclang-dev
+
+      - name: Install miri
+        run: |
+          rustup component add miri --toolchain nightly
+
+      - name: Run miri
+        run: |
+          cargo +nightly miri test --package fd_bits || echo "Miri test failed for fd_bits"
+          cargo +nightly miri test --package fd_math || echo "Miri test failed for fd_math"
+          cargo +nightly miri test --package fd_log || echo "Miri test failed for fd_log"
+          cargo +nightly miri test --package fd_net || echo "Miri test failed for fd_net"
