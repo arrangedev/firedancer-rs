@@ -1,0 +1,9 @@
+[package]
+name = "fd_tpool"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+libfd_tpool_sys = { path = "../libfd_tpool_sys" }
+
+[dev-dependencies]

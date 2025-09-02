@@ -1,0 +1,9 @@
+[package]
+name = "fd_dcache"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+libfd_dcache_sys = { path = "../libfd_dcache_sys" }
+
+[dev-dependencies]

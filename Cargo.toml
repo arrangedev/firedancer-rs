@@ -2,9 +2,16 @@
 resolver = "2"
 members = [
     "crates/bits/*",
+    "crates/checkpt/*",
+    "crates/env/*",
     "crates/math/*",
     "crates/log/*",
-    "crates/net/*"
+    "crates/mem/*/*",
+    "crates/net/*",
+    "crates/tile/*",
+    "crates/tmpl/*",
+    "crates/tpool/*",
+    "crates/wksp/*"
 ]
 
 [workspace.package]

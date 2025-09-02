@@ -1,0 +1,9 @@
+[package]
+name = "fd_scratch"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+libfd_scratch_sys = { path = "../libfd_scratch_sys" }
+
+[dev-dependencies]

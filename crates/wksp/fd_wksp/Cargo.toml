@@ -1,0 +1,9 @@
+[package]
+name = "fd_wksp"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+libfd_wksp_sys = { path = "../libfd_wksp_sys" }
+
+[dev-dependencies]
