@@ -1,0 +1,9 @@
+[package]
+name = "fd_bits"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_bits_sys = { path = "../fd_bits_sys" }
+
+[dev-dependencies] 

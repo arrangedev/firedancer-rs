@@ -1,0 +1,9 @@
+[package]
+name = "fd_json"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_json_sys = { path = "../fd_json_sys" }
+
+[dev-dependencies]

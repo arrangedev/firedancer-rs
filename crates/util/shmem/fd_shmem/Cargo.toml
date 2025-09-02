@@ -1,0 +1,11 @@
+[package]
+name = "fd_shmem"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_shmem_sys = { path = "../fd_shmem_sys" }
+libc = "0.2"
+
+[dev-dependencies]
+test-case = "3.3"

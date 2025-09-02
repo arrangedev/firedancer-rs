@@ -1,0 +1,9 @@
+[package]
+name = "fd_quic"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_quic_sys = { path = "../fd_quic_sys" }
+
+[dev-dependencies]

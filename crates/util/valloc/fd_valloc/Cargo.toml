@@ -1,0 +1,12 @@
+[package]
+name = "fd_valloc"
+version.workspace = true
+edition.workspace = true
+
+[features]
+hosted = []
+
+[dependencies]
+fd_valloc_sys = { path = "../fd_valloc_sys" }
+
+[dev-dependencies]

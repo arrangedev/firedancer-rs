@@ -1,0 +1,9 @@
+[package]
+name = "fd_math"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_math_sys = { path = "../fd_math_sys" }
+
+[dev-dependencies] 

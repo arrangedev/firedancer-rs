@@ -1,9 +1,0 @@
-[package]
-name = "fd_ccache"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-libfd_ccache_sys = { path = "../libfd_ccache_sys" }
-
-[dev-dependencies]

@@ -1,0 +1,9 @@
+[package]
+name = "fd_toml"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_toml_sys = { path = "../fd_toml_sys" }
+
+[dev-dependencies]

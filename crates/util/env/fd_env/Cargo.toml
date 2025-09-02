@@ -1,0 +1,9 @@
+[package]
+name = "fd_env"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_env_sys = { path = "../fd_env_sys" }
+
+[dev-dependencies]

@@ -1,0 +1,9 @@
+[package]
+name = "fd_zstd"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_zstd_sys = { path = "../fd_zstd_sys" }
+
+[dev-dependencies]

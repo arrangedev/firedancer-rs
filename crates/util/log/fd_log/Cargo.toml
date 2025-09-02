@@ -1,0 +1,11 @@
+[package]
+name = "libfd-log"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_log_sys = { path = "../fd_log_sys" }
+
+[dev-dependencies]
+libc = "0.2.175"
+test-case = "3.3.1"

@@ -1,9 +1,0 @@
-[package]
-name = "fd_net"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-libfd_net_sys = { path = "../libfd_net_sys" }
-
-[dev-dependencies] 

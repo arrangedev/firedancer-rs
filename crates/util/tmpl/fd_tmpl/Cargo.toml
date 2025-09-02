@@ -1,0 +1,9 @@
+[package]
+name = "fd_tmpl"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_tmpl_sys = { path = "../fd_tmpl_sys" }
+
+[dev-dependencies]

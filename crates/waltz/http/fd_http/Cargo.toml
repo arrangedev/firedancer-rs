@@ -1,0 +1,9 @@
+[package]
+name = "fd_http"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_http_sys = { path = "../fd_http_sys" }
+
+[dev-dependencies]

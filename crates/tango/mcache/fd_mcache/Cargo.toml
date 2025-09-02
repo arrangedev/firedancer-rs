@@ -1,0 +1,9 @@
+[package]
+name = "fd_mcache"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_mcache_sys = { path = "../fd_mcache_sys" }
+
+[dev-dependencies]

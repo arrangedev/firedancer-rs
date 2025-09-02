@@ -1,0 +1,9 @@
+[package]
+name = "fd_sbpf"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_sbpf_sys = { path = "../fd_sbpf_sys" }
+
+[dev-dependencies]

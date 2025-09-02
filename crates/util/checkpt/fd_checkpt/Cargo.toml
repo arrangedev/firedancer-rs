@@ -1,0 +1,11 @@
+[package]
+name = "fd_checkpt"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_checkpt_sys = { path = "../fd_checkpt_sys" }
+libc = "0.2"
+
+[dev-dependencies]
+test-case = "3.3"

@@ -1,9 +1,0 @@
-[package]
-name = "fd_tile"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-libfd_tile_sys = { path = "../libfd_tile_sys" }
-
-[dev-dependencies]

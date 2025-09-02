@@ -1,0 +1,9 @@
+[package]
+name = "fd_shred"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_shred_sys = { path = "../fd_shred_sys" }
+
+[dev-dependencies]

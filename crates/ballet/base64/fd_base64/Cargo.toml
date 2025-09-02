@@ -1,0 +1,9 @@
+[package]
+name = "fd_base64"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_base64_sys = { path = "../fd_base64_sys" }
+
+[dev-dependencies]

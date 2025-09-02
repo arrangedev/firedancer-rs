@@ -1,9 +1,0 @@
-[package]
-name = "fd_mcache"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-libfd_mcache_sys = { path = "../libfd_mcache_sys" }
-
-[dev-dependencies]

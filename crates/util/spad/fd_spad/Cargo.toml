@@ -1,0 +1,9 @@
+[package]
+name = "fd_spad"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_spad_sys = { path = "../fd_spad_sys" }
+
+[dev-dependencies]

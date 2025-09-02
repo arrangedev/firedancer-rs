@@ -1,0 +1,9 @@
+[package]
+name = "fd_net"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_net_sys = { path = "../fd_net_sys" }
+
+[dev-dependencies] 

@@ -1,0 +1,9 @@
+[package]
+name = "fd_txn"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_txn_sys = { path = "../fd_txn_sys" }
+
+[dev-dependencies]

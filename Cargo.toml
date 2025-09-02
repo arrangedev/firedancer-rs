@@ -1,17 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/bits/*",
-    "crates/checkpt/*",
-    "crates/env/*",
-    "crates/math/*",
-    "crates/log/*",
-    "crates/mem/*/*",
-    "crates/net/*",
-    "crates/tile/*",
-    "crates/tmpl/*",
-    "crates/tpool/*",
-    "crates/wksp/*"
+    "crates/util/*/*",
+    "crates/tango/*/*",
+    "crates/ballet/*/*",
 ]
 
 [workspace.package]
