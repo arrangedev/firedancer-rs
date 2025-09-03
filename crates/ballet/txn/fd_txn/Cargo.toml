@@ -5,5 +5,6 @@ edition.workspace = true
 
 [dependencies]
 fd_txn_sys = { path = "../fd_txn_sys" }
+fd_ed25519 = { path = "../../ed25519/fd_ed25519" }
 
 [dev-dependencies]

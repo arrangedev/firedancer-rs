@@ -1,9 +1,9 @@
 [package]
-name = "fd_shred_sys"
+name = "fd_ed25519_sys"
 version.workspace = true
 edition.workspace = true
 build = "build.rs"
-links = "fdshred"
+links = "fded25519"
 
 [dependencies]
 

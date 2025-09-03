@@ -4,6 +4,7 @@ members = [
     "crates/util/*/*",
     "crates/tango/*/*",
     "crates/ballet/*/*",
+    #"crates/waltz/*/*",
 ]
 
 [workspace.package]

@@ -1,0 +1,9 @@
+[package]
+name = "fd_ed25519"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_ed25519_sys = { path = "../fd_ed25519_sys" }
+
+[dev-dependencies]
