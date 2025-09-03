@@ -36,10 +36,9 @@
 //! use std::mem::MaybeUninit;
 //!
 //! unsafe {
-//!     // Load ELF binary
-//!     let elf_bytes: &[u8] = &[/* ELF binary data */];
-//!     
-//!     // Parse ELF header
+//!     // load binary
+//!     let elf_bytes: &[u8] = &[/* ... */];
+//!     // parse elf header
 //!     let mut info = MaybeUninit::<fd_sbpf_elf_info_t>::uninit();
 //!     let config = fd_sbpf_loader_config_t {
 //!         elf_deploy_checks: 1,
@@ -50,35 +49,30 @@
 //!     
 //!     let result = fd_sbpf_elf_peek(
 //!         info.as_mut_ptr(),
-//!         elf_bytes.as_ptr() as *const std::ffi::c_void,
+//!         elf_bytes.as_ptr() as *const core::ffi::c_void,
 //!         elf_bytes.len() as u64,
 //!         &config
 //!     );
 //!     
 //!     if result == 0 {
 //!         let info = info.assume_init();
-//!         println!("Successfully parsed ELF header");
-//!         
-//!         // Get program footprint
+//!         // program footprint
 //!         let footprint = fd_sbpf_program_footprint(&info);
 //!         let align = fd_sbpf_program_align();
-//!         
-//!         // Allocate memory for program
+//!         // allocate program memory
 //!         let prog_mem = std::alloc::alloc(
 //!             std::alloc::Layout::from_size_align(footprint as usize, align as usize).unwrap()
 //!         );
 //!         
-//!         // Create program object  
+//!         // create a program object  
 //!         let program = fd_sbpf_program_new(
-//!             prog_mem as *mut std::ffi::c_void,
+//!             prog_mem as *mut core::ffi::c_void,
 //!             &info,
-//!             std::ptr::null_mut() // rodata - would need proper allocation
+//!             core::ptr::null_mut()
 //!         );
 //!         
 //!         if !program.is_null() {
-//!             println!("Successfully created program object");
-//!             
-//!             // Clean up
+//!             // clenaup
 //!             fd_sbpf_program_delete(program);
 //!         }
 //!         
@@ -87,8 +81,8 @@
 //!             std::alloc::Layout::from_size_align(footprint as usize, align as usize).unwrap()
 //!         );
 //!     } else {
-//!         let error_msg = std::ffi::CStr::from_ptr(fd_sbpf_strerror());
-//!         println!("Failed to parse ELF: {:?}", error_msg);
+//!         let err = core::ffi::CStr::from_ptr(fd_sbpf_strerror());
+//!         println!("Failed to parse: {err:?}");
 //!     }
 //! }
 //! ```
@@ -103,8 +97,7 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 #[cfg(test)]
 mod tests {
     use super::*;
-    extern crate std;
-    use std::mem::MaybeUninit;
+    use core::mem::MaybeUninit;
 
     #[test]
     fn test_strerror() {
@@ -115,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn test_instruction_conversion() {
+    fn test_ixn_conversion() {
         unsafe {
             let test_val: u64 = 0x1234567890abcdef;
             let instr = fd_sbpf_instr(test_val);
@@ -125,23 +118,20 @@ mod tests {
     }
 
     #[test]
-    fn test_function_detection() {
+    fn test_fn_detect() {
         unsafe {
-            // Test function start detection (opcode 0x07, dst_reg 0x0A)
+            // function start (opcode 0x07, dst_reg 0x0A)
             let function_start_val: u64 = 0x07 | (0x0A << 8); // opcode=0x07, dst_reg=0x0A
             let instr = fd_sbpf_instr(function_start_val);
             assert_eq!(fd_sbpf_is_function_start(instr), 1);
-
-            // Test function end detection (opcode 0x05 or 0x9D)
+            // function end (opcode 0x05 or 0x9D)
             let function_end_val1: u64 = 0x05; // opcode=0x05
             let instr1 = fd_sbpf_instr(function_end_val1);
             assert_eq!(fd_sbpf_is_function_end(instr1), 1);
-
             let function_end_val2: u64 = 0x9D; // opcode=0x9D
             let instr2 = fd_sbpf_instr(function_end_val2);
             assert_eq!(fd_sbpf_is_function_end(instr2), 1);
-
-            // Test non-function instruction
+            // non-function ixn
             let normal_val: u64 = 0x04; // opcode=0x04
             let normal_instr = fd_sbpf_instr(normal_val);
             assert_eq!(fd_sbpf_is_function_start(normal_instr), 0);
@@ -150,19 +140,14 @@ mod tests {
     }
 
     #[test]
-    fn test_program_align_and_footprint() {
+    fn test_progalign_and_footprint() {
         unsafe {
             let align = fd_sbpf_program_align();
             assert!(align > 0);
             assert!(align.is_power_of_two());
-
-            // Create a minimal ELF info for testing footprint
             let mut info = MaybeUninit::<fd_sbpf_elf_info_t>::uninit();
             let info_ptr = info.as_mut_ptr();
-
-            // Zero initialize the struct
-            std::ptr::write_bytes(info_ptr, 0, 1);
-
+            core::ptr::write_bytes(info_ptr, 0, 1);
             let info = info.assume_init();
             let footprint = fd_sbpf_program_footprint(&info);
             assert!(footprint >= core::mem::size_of::<fd_sbpf_program_t>() as u64);

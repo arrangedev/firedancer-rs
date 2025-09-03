@@ -1,0 +1,9 @@
+[package]
+name = "fd_nanopb"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_nanopb_sys = { path = "../fd_nanopb_sys" }
+
+[dev-dependencies]

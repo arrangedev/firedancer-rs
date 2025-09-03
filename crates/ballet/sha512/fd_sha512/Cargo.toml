@@ -1,0 +1,9 @@
+[package]
+name = "fd_sha512"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_sha512_sys = { path = "../fd_sha512_sys" }
+
+[dev-dependencies]

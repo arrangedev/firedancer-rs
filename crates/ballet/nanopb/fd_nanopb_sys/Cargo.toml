@@ -1,12 +1,11 @@
 [package]
-name = "fd_zstd_sys"
+name = "fd_nanopb_sys"
 version.workspace = true
 edition.workspace = true
 build = "build.rs"
-links = "fdzstd"
+links = "fdnanopb"
 
 [dependencies]
-libc = { version = "0.2", default-features = false }
 
 [build-dependencies]
 bindgen = { version = "0.72.1" }

@@ -1,0 +1,9 @@
+[package]
+name = "fd_sha256"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_sha256_sys = { path = "../fd_sha256_sys" }
+
+[dev-dependencies]

@@ -1,0 +1,9 @@
+[package]
+name = "fd_keccak256"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_keccak256_sys = { path = "../fd_keccak256_sys" }
+
+[dev-dependencies]

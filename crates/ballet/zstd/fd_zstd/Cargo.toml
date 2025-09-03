@@ -3,6 +3,10 @@ name = "fd_zstd"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = ["std"]
+std = []
+
 [dependencies]
 fd_zstd_sys = { path = "../fd_zstd_sys" }
 
