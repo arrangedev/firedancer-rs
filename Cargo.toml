@@ -4,7 +4,8 @@ members = [
     "crates/util/*/*",
     "crates/tango/*/*",
     "crates/ballet/*/*",
-    #"crates/waltz/*/*",
+    "crates/waltz/grpc/*",
+    "crates/waltz/http/*",
 ]
 
 [workspace.package]
