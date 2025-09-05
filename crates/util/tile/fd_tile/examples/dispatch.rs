@@ -4,14 +4,14 @@
 use fd_tile::{TaskResult, Tile};
 use std::time::{Duration, Instant};
 
-extern "C" fn c_fibonacci(argc: i32, argv: *mut *mut i8) -> i32 {
+extern "C" fn c_fibonacci(argc: i32, argv: *mut *mut std::os::raw::c_char) -> i32 {
     println!("fibonacci started on tile {}", fd_tile::current_tile_idx());
 
     let n = if argc > 1 {
         unsafe {
             let arg_ptr = *argv.offset(1);
             if !arg_ptr.is_null() {
-                let arg_cstr = std::ffi::CStr::from_ptr(arg_ptr);
+                let arg_cstr = std::ffi::CStr::from_ptr(arg_ptr as *const std::os::raw::c_char);
                 if let Ok(arg_str) = arg_cstr.to_str() {
                     arg_str.parse::<u32>().unwrap_or(10)
                 } else {
@@ -34,7 +34,7 @@ extern "C" fn c_fibonacci(argc: i32, argv: *mut *mut i8) -> i32 {
     result as i32
 }
 
-extern "C" fn worksim(argc: i32, argv: *mut *mut i8) -> i32 {
+extern "C" fn worksim(argc: i32, argv: *mut *mut std::os::raw::c_char) -> i32 {
     let tile_idx = fd_tile::current_tile_idx();
     println!("worksim started on tile {}", tile_idx);
 
@@ -42,7 +42,7 @@ extern "C" fn worksim(argc: i32, argv: *mut *mut i8) -> i32 {
         unsafe {
             let arg_ptr = *argv.offset(1);
             if !arg_ptr.is_null() {
-                let arg_cstr = std::ffi::CStr::from_ptr(arg_ptr);
+                let arg_cstr = std::ffi::CStr::from_ptr(arg_ptr as *const std::os::raw::c_char);
                 if let Ok(arg_str) = arg_cstr.to_str() {
                     arg_str.parse::<u64>().unwrap_or(100)
                 } else {

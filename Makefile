@@ -1,7 +1,8 @@
 .PHONY: help all build build-debug build-release build-fast tests unit-tests examples \
         check fmt lint clean install doc \
         build-bits test-bits build-math test-math build-log test-log build-net test-net \
-        bindings wrappers vcheckout vlist
+        bindings wrappers vinit vcheckout vlist \
+        docker-build docker-test docker-shell docker-clean docker-ci
 
 all: build test check
 
@@ -45,8 +46,16 @@ help:
 	@echo "  wrappers      - Build all wrapper crates (fd_*)"
 	@echo ""
 	@echo "VENDOR:"
+	@echo "  vinit         - Initialize submodules from fresh repo setup"
 	@echo "  vlist         - List available dirs in firedancer repo"
 	@echo "  vcheckout     - Checkout additional dirs from firedancer"
+	@echo ""
+	@echo "DOCKER (Ubuntu 24.04.2 LTS Testing):"
+	@echo "  docker-build  - Build Ubuntu development container"
+	@echo "  docker-test   - Run all tests in Ubuntu container"
+	@echo "  docker-shell  - Open interactive shell in Ubuntu container"
+	@echo "  docker-clean  - Clean Docker containers and images"
+	@echo "  docker-ci     - Run full CI pipeline in Ubuntu container"
 
 build: build-fast
 
@@ -156,6 +165,40 @@ install:
 	@cargo install --path . --force
 	@echo "Done."
 
+vinit:
+	@echo "Initializing submodules from fresh repo setup..."
+	@echo "Step 1: Initialize submodules..."
+	@git submodule update --init --recursive
+	@echo "Step 2: Configuring sparse checkout for vendor submodule..."
+	@mkdir -p .git/modules/vendor/info
+	@echo "src/util/*" > .git/modules/vendor/info/sparse-checkout
+	@echo "src/ballet/*" >> .git/modules/vendor/info/sparse-checkout
+	@echo "src/tango/*" >> .git/modules/vendor/info/sparse-checkout
+	@echo "src/funk/*" >> .git/modules/vendor/info/sparse-checkout
+	@echo "src/waltz/*" >> .git/modules/vendor/info/sparse-checkout
+	@echo "src/disco/*" >> .git/modules/vendor/info/sparse-checkout
+	@cd vendor && \
+	git config core.sparseCheckout true && \
+	git read-tree -m -u HEAD
+	@echo "Step 3: Moving source directories to top level..."
+	@cd vendor && \
+	if [ -d "src" ]; then \
+		for dir in src/*/; do \
+			if [ -d "$$dir" ]; then \
+				dirname=$$(basename "$$dir"); \
+				if [ ! -d "$$dirname" ]; then \
+					echo "MOVING $$dir TO $$dirname"; \
+					mv "$$dir" "$$dirname"; \
+				fi; \
+			fi; \
+		done; \
+		if [ -d "src" ] && [ -z "$$(ls -A src)" ]; then \
+			rmdir src; \
+		fi; \
+	fi
+	@echo "Submodule initialization complete! Available directories:"
+	@cd vendor && find . -maxdepth 1 -type d ! -name "." | sed 's|^\./||' | sort
+
 vlist:
 	@echo "CHECKED OUT:"
 	@cd vendor && find . -maxdepth 1 -type d ! -name "." | sed 's|^\./||' | sort
@@ -191,3 +234,39 @@ vcheckout:
 	fi
 	@echo "Done. Updated dirs:"
 	@cd vendor && find . -maxdepth 1 -type d ! -name "." | sed 's|^\./||' | sort
+
+docker-build:
+	@echo "Building container (Ubuntu 24.04.2 LTS)..."
+	@docker-compose build
+
+docker-test:
+	@echo "Running tests (Ubuntu 24.04.2 LTS)..."
+	@docker-compose run --rm libfiredancer-dev make tests
+
+docker-shell:
+	@echo "Opening shell (Ubuntu 24.04.2 LTS)..."
+	@docker-compose run --rm libfiredancer-dev /bin/bash
+
+docker-clean:
+	@echo "Cleaning artifacts..."
+	@docker-compose down --volumes --remove-orphans
+	@docker system prune -f
+
+docker-ci:
+	@echo "Running CI (Ubuntu 24.04.2 LTS)..."
+	@docker-compose run --rm libfiredancer-dev make ci
+
+docker-test-bits:
+	@docker-compose run --rm libfiredancer-dev make test-bits
+
+docker-test-math:
+	@docker-compose run --rm libfiredancer-dev make test-math
+
+docker-test-log:
+	@docker-compose run --rm libfiredancer-dev make test-log
+
+docker-test-net:
+	@docker-compose run --rm libfiredancer-dev make test-net
+
+docker-examples:
+	@docker-compose run --rm libfiredancer-dev make examples

@@ -3,11 +3,11 @@ use fd_http::{
     ConnectionCloseReason, Method, Request, Response, Server, ServerCallbacks, ServerParams,
 };
 
-struct ApiServer {
+struct API {
     name: String,
 }
 
-impl ApiServer {
+impl API {
     fn new(name: String) -> Self {
         Self { name }
     }
@@ -21,7 +21,7 @@ impl ApiServer {
 <html>
 <head><title>{} Server</title></head>
 <body>
-    <h1>Welcome to {} HTTP Server!</h1>
+    <h1>Welcome to {}!</h1>
     <p>Available endpoints:</p>
     <ul>
         <li><a href="/api/status">GET /api/status</a> - Server status</li>
@@ -73,7 +73,7 @@ impl ApiServer {
     }
 }
 
-impl ServerCallbacks for ApiServer {
+impl ServerCallbacks for API {
     fn on_request(&mut self, conn_id: u64, request: Request) -> Response {
         let method_str = match request.method {
             Method::Get => "GET",
@@ -105,9 +105,6 @@ impl ServerCallbacks for ApiServer {
         }
     }
 
-    // on_connection_open is not part of the ServerCallbacks trait
-    // Connection tracking is handled internally by the server
-
     fn on_connection_close(&mut self, conn_id: u64, reason: ConnectionCloseReason) {
         // cleanup any per-connection state
         let reason_str = match reason {
@@ -138,7 +135,7 @@ fn main() -> Result<(), fd_http::Error> {
         .max_ws_recv_frame_len(8192)  // 8KB max ws frame
         .build();
 
-    let callbacks = ApiServer::new("libfd-example".to_string());
+    let callbacks = API::new("libfd-example".to_string());
     let mut server = Server::new(params, callbacks, 65536)?;
 
     let addr = Ipv4Addr::new(127, 0, 0, 1);
@@ -179,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_api_server_get_endpoints() {
-        let mut server = ApiServer::new("Test".to_string());
+        let mut server = API::new("Test".to_string());
 
         let request = Request {
             method: Method::Get,
@@ -217,7 +214,7 @@ mod tests {
 
     #[test]
     fn test_api_server_post_echo() {
-        let mut server = ApiServer::new("Test".to_string());
+        let mut server = API::new("Test".to_string());
 
         let request = Request {
             method: Method::Post,
@@ -235,7 +232,7 @@ mod tests {
 
     #[test]
     fn test_cors_preflight() {
-        let mut server = ApiServer::new("Test".to_string());
+        let mut server = API::new("Test".to_string());
 
         let request = Request {
             method: Method::Options,

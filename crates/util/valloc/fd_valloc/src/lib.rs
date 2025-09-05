@@ -24,8 +24,8 @@
 
 use core::ptr::NonNull;
 use fd_valloc_sys::{
-    self as sys, fd_is_null_alloc_virtual, fd_libc_alloc_virtual, fd_null_alloc_virtual,
-    fd_valloc_free, fd_valloc_malloc, ulong,
+    self as sys, fd_backtracing_alloc_virtual, fd_is_null_alloc_virtual, fd_libc_alloc_virtual,
+    fd_null_alloc_virtual, fd_valloc_free, fd_valloc_malloc, ulong,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -230,7 +230,7 @@ impl VirtualAllocator for BacktracingAllocator {
         }
 
         unsafe {
-            let ptr = fd_valloc_malloc(self.valloc, alignment, size);
+            let ptr = fd_valloc_malloc(self.valloc, alignment as ulong, size as ulong);
             if ptr.is_null() {
                 Err(VAllocError::AllocationFailed)
             } else {

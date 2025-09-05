@@ -37,6 +37,7 @@ fn main() {
         .file(io_path.join("fd_io.c"))
         .include(&util_path)
         .define("FD_HAS_HOSTED", "1")
+        .define("_GNU_SOURCE", "1")
         .flag("-std=c17")
         .flag("-O3")
         .flag("-fPIC");
@@ -60,6 +61,7 @@ fn main() {
         .header(log_path.join("fd_log.h").to_string_lossy())
         .clang_arg(format!("-I{}", util_path.display()))
         .clang_arg("-DFD_HAS_HOSTED=1")
+        .clang_arg("-D_GNU_SOURCE")
         .clang_arg("-std=c17")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
 

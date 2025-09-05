@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  libfiredancer-dev:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    container_name: libfiredancer-ubuntu-24
+    volumes:
+      - .:/workspace
+      - cargo-cache:/root/.cargo/registry
+      - cargo-git-cache:/root/.cargo/git
+      - target-cache:/workspace/target
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    environment:
+      - RUST_BACKTRACE=1
+      - CARGO_TARGET_DIR=/workspace/target
+      - CARGO_INCREMENTAL=1
+      - RUST_LOG=debug
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    mem_limit: 4g
+    memswap_limit: 4g
+
+volumes:
+  cargo-cache:
+    driver: local
+  cargo-git-cache:
+    driver: local  
+  target-cache:
+    driver: local

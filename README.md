@@ -14,61 +14,42 @@ Rather, the crates in this repo are better served as components of rigorously te
 - Documentation of everything
 - High-level abstractions
 
-## Progress
+## Status
 
-Currently, bindings are completed for a few components of [`utils`](https://github.com/firedancer-io/firedancer/blob/main/src/util/fd_util.h):
-
-- `net`
-- `bits`
-- `log`
-- `math`
-- `env`
-- `tpool` (partial)
-
-### TODO
-
-#### `utils`
-- `tmpl`
-- `alloc`
-- `valloc`
-- `scratch`
-- `spad`
-- `tile`
-- `wksp`
-- `shmem`
-- `checkpt`
-
-#### `waltz`
-- `aio`
-- `http`
-- `quic`
-- `grpc`
-- `ebpf`
-- `xdp`
-
-### `funk`
-
-#### `disco`
-- `bundle`
-- `store`
-
-#### `ballet`
-- `ed25519`
-- `block`
-- `txn`
-- `shred`
-- `base58`
-- `base64`
-- `sha1`
-- `sha256`
-- `sha512`
-- `keccak256`
-- `blake3`
-- `json`
-- `toml`
-- `hex`
-- `zstd`
-- `bigint`
+| Module | Crate | macOS ARM64 | x86_64 Linux |
+|--------|-------|-------------|--------------|
+| **Ballet** |
+| ed25519 | `fd_ed25519_sys` | √ | √ |
+| sha256 | `fd_sha256_sys` | √ | √ |
+| sha512 | `fd_sha512_sys` | √ | √ |
+| keccak256 | `fd_keccak256_sys` | √ | √ |
+| base64 | `fd_base64_sys` | √ | √ | |
+| sbpf | `fd_sbpf_sys` | √ | √ |
+| json | `fd_json_sys` | √ | √ | |
+| toml | `fd_toml_sys` | √ | √ | |
+| txn | `fd_txn_sys` | √ | √ |
+| shred | `fd_shred_sys` | √ | √ |
+| nanopb | `fd_nanopb_sys` | √ | √ |
+| zstd | `fd_zstd_sys` | √ | x |
+| **Tango** |
+| mcache | `fd_mcache_sys` | √ | √ |
+| dcache | `fd_dcache_sys` | √ | √ |
+| tcache | `fd_tcache_sys` | √ | √ |
+| **Util** |
+| net | `fd_net_sys` | √ | √ |
+| math | `fd_math_sys` | √ | √ |
+| bits | `fd_bits_sys` | √ | √ |
+| log | `fd_log_sys` | √ | √ |
+| env | `fd_env_sys` | √ | √ |
+| checkpt | `fd_checkpt_sys` | √ | x |
+| valloc | `fd_valloc_sys` | √ | x |
+| spad | `fd_spad_sys` | √ | x |
+| tmpl | `fd_tmpl_sys` | √ | x |
+| wksp | `fd_wksp_sys` | √ | x |
+| tile | `fd_tile_sys` | √ | x |
+| tpool | `fd_tpool_sys` | √ | x |
+| scratch | `fd_scratch_sys` | √ | x |
+| shmem | `fd_shmem_sys` | √ | x |
 
 ## License
 

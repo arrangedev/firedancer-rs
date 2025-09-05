@@ -40,7 +40,7 @@
 //! use fd_tile::{Tile, TaskResult};
 //!
 //! // Define a task function
-//! extern "C" fn compute_task(argc: i32, argv: *mut *mut i8) -> i32 {
+//! extern "C" fn compute_task(argc: i32, argv: *mut *mut std::os::raw::c_char) -> i32 {
 //!     // Perform computation
 //!     println!("Computing on tile {}", fd_tile::current_tile_idx());
 //!     0 // Success
@@ -151,7 +151,8 @@ pub enum TaskResult {
     Error(String),
 }
 
-pub type TaskFunction = unsafe extern "C" fn(argc: i32, argv: *mut *mut i8) -> i32;
+pub type TaskFunction =
+    unsafe extern "C" fn(argc: i32, argv: *mut *mut std::os::raw::c_char) -> i32;
 
 pub struct TaskExecution {
     handle: NonNull<sys::fd_tile_exec_t>,
@@ -292,7 +293,7 @@ impl Tile {
             return Err(TileError::CannotDispatchToTileZero);
         }
 
-        let mut c_args = Vec::new();
+        let mut c_args: Vec<*mut std::os::raw::c_char> = Vec::new();
         let mut c_strings = Vec::new();
 
         let task_name = CString::new("task")
@@ -306,7 +307,7 @@ impl Tile {
         }
 
         for c_string in &c_strings {
-            c_args.push(c_string.as_ptr() as *mut i8);
+            c_args.push(c_string.as_ptr() as *mut std::os::raw::c_char);
         }
         c_args.push(std::ptr::null_mut());
 

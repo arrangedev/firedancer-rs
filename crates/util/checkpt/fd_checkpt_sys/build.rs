@@ -49,6 +49,7 @@ fn main() {
         .include(&util_path)
         .define("FD_HAS_HOSTED", "1")
         .define("FD_HAS_LZ4", "1")  // Enable LZ4 compression support
+        .define("_GNU_SOURCE", "1")
         .flag("-std=c17")
         .flag("-O3")
         .flag("-fPIC");

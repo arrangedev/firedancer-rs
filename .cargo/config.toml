@@ -1,13 +1,11 @@
 [build]
-incremental = true
+# target = "x86_64-unknown-linux-gnu"
 
-[target.x86_64-apple-darwin]
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+[target.x86_64-unknown-linux-gnu]
+linker = "x86_64-linux-gnu-gcc"
 
-[alias]
-ck = "check"
-t = "test"
-r = "run"
-rr = "run --release"
-b = "build"
-br = "build --release"
+[env]
+CARGO_TERM_VERBOSE = "false"
+CARGO_TERM_COLOR = "always"
+CFLAGS = "-w"
+CXXFLAGS = "-w"

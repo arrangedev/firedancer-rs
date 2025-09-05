@@ -37,7 +37,11 @@ mod tests {
             let mut argv_ptr = argv.as_mut_ptr();
 
             let key = CString::new("--test").unwrap();
-            let result = fd_env_strip_cmdline_contains(&mut argc, &mut argv_ptr, key.as_ptr());
+            let result = fd_env_strip_cmdline_contains(
+                &mut argc,
+                argv_ptr as *mut *mut *mut core::ffi::c_char,
+                key.as_ptr(),
+            );
 
             assert_eq!(result, 1);
             assert_eq!(argc, 3);
@@ -66,7 +70,7 @@ mod tests {
 
             let result = fd_env_strip_cmdline_ulong(
                 &mut argc,
-                &mut argv_ptr,
+                argv_ptr as *mut *mut *mut core::ffi::c_char,
                 key.as_ptr(),
                 env_key,
                 default_val,
@@ -87,7 +91,11 @@ mod tests {
 
             let _result =
                 fd_env_strip_cmdline_ulong(&mut argc, &mut argv_ptr, key, env_key, 123u64);
-            let _contains = fd_env_strip_cmdline_contains(&mut argc, &mut argv_ptr, key);
+            let _contains = fd_env_strip_cmdline_contains(
+                &mut argc,
+                argv_ptr as *mut *mut *mut core::ffi::c_char,
+                key,
+            );
         }
     }
 }

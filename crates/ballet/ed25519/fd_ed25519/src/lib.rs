@@ -1,21 +1,6 @@
-//! Safe Rust API for Firedancer Ed25519 implementation
+//! This crate provides safe abstractions over the raw bindings in `fd_ed25519_sys`.
 //!
-//! This crate provides safe abstractions over the raw FFI bindings in `fd_ed25519_sys`.
-//! The Ed25519 implementation is based on the high-performance Firedancer cryptographic library
-//! and provides complete Ed25519 signature operations and X25519 key exchange.
-//!
-//! ## Features
-//!
-//! - **Ed25519 Digital Signatures**: RFC 8032 compliant signature generation and verification
-//! - **X25519 Key Exchange**: RFC 7748 compliant Elliptic Curve Diffie-Hellman
-//! - **Batch Verification**: Efficient verification of multiple signatures
-//! - **High Performance**: Optimized assembly implementations for x86_64 and ARM
-//! - **Constant Time**: Side-channel resistant implementations
-//! - **Memory Safety**: All unsafe operations are encapsulated with proper error handling
-//!
-//! ## Examples
-//!
-//! ### Keygen + Signing
+//! ## Keygen + Signing
 //!
 //! ```rust
 //! use fd_ed25519::{Keypair, Signature};
@@ -29,7 +14,7 @@
 //! assert!(keypair.pubkey().verify(message, &signature).unwrap());
 //! ```
 //!
-//! ### Sigverify
+//! ## Sigverify
 //!
 //! ```rust
 //! use fd_ed25519::{Keypair, Pubkey, Signature};
@@ -44,7 +29,7 @@
 //! assert!(is_valid);
 //! ```
 //!
-//! ### Batch Verification
+//! ## Batch Verify
 //!
 //! ```rust
 //! use fd_ed25519::{Pubkey, Signature, batch_verify_single_message};
@@ -56,7 +41,7 @@
 //! let all_valid = batch_verify_single_message(message, &pubkeys, &signatures).unwrap();
 //! ```
 //!
-//! ## X25519 Usage
+//! ## X25519
 //!
 //! ```rust
 //! use fd_ed25519::{X25519PrivateKey, X25519PublicKey};

@@ -87,7 +87,11 @@ fn main() {
         bindgen = bindgen
             .clang_arg("-DFD_HAS_X86=1")
             .clang_arg("-DFD_HAS_SSE=1")
-            .clang_arg("-DFD_HAS_AVX=1");
+            .clang_arg("-DFD_HAS_AVX=1")
+            .clang_arg("-msse")
+            .clang_arg("-msse2")
+            .clang_arg("-mavx")
+            .clang_arg("-mavx2");
     } else if is_aarch64 {
         bindgen = bindgen.clang_arg("-DFD_HAS_ARM=1");
     }
@@ -137,7 +141,11 @@ fn main() {
         build
             .define("FD_HAS_X86", "1")
             .define("FD_HAS_SSE", "1")
-            .define("FD_HAS_AVX", "1");
+            .define("FD_HAS_AVX", "1")
+            .flag("-msse")
+            .flag("-msse2")
+            .flag("-mavx")
+            .flag("-mavx2");
     } else if is_aarch64 {
         build.define("FD_HAS_ARM", "1");
     }

@@ -1,67 +1,29 @@
 use std::env;
 use std::path::PathBuf;
 
+use firedancer_rs_common::{is_emulated, rerun_if_changed, FiredancerPaths, TargetInfo};
+
 fn main() {
-    let firedancer_path = PathBuf::from("../../../../vendor");
-    let ballet_path = firedancer_path.join("ballet");
-    let ed25519_path = ballet_path.join("ed25519");
-    let sha512_path = ballet_path.join("sha512");
-    let util_path = firedancer_path.join("util");
+    let target_info = TargetInfo::new();
 
-    // Add rerun-if-changed for all relevant files
-    println!(
-        "cargo:rerun-if-changed={}",
-        ed25519_path.join("fd_ed25519.h").display()
-    );
-    println!(
-        "cargo:rerun-if-changed={}",
-        ed25519_path.join("fd_ed25519_user.c").display()
-    );
-    println!(
-        "cargo:rerun-if-changed={}",
-        ed25519_path.join("fd_curve25519.c").display()
-    );
-    println!(
-        "cargo:rerun-if-changed={}",
-        ed25519_path.join("fd_curve25519_secure.c").display()
-    );
-    println!(
-        "cargo:rerun-if-changed={}",
-        ed25519_path.join("fd_curve25519_scalar.c").display()
-    );
-    println!(
-        "cargo:rerun-if-changed={}",
-        ed25519_path.join("fd_curve25519_tables.c").display()
-    );
-    println!(
-        "cargo:rerun-if-changed={}",
-        ed25519_path.join("fd_f25519.c").display()
-    );
-    println!(
-        "cargo:rerun-if-changed={}",
-        ed25519_path.join("fd_x25519.c").display()
-    );
-    println!(
-        "cargo:rerun-if-changed={}",
-        ed25519_path.join("fd_ristretto255.c").display()
-    );
-    println!(
-        "cargo:rerun-if-changed={}",
-        sha512_path.join("fd_sha512.h").display()
-    );
-    println!(
-        "cargo:rerun-if-changed={}",
-        sha512_path.join("fd_sha512.c").display()
-    );
-    println!(
-        "cargo:rerun-if-changed={}",
-        util_path.join("fd_util_base.h").display()
-    );
+    let paths = FiredancerPaths::new();
+    let ed25519_path = paths.ballet_module("ed25519");
+    let sha512_path = paths.ballet_module("sha512");
 
-    let target = env::var("TARGET").unwrap();
-    let is_x86_64 = target.contains("x86_64");
-    let is_aarch64 = target.contains("aarch64") || target.contains("arm");
-    let is_macos = target.contains("apple");
+    rerun_if_changed![
+        ed25519_path.join("fd_ed25519.h"),
+        ed25519_path.join("fd_ed25519_user.c"),
+        ed25519_path.join("fd_curve25519.c"),
+        ed25519_path.join("fd_curve25519_secure.c"),
+        ed25519_path.join("fd_curve25519_scalar.c"),
+        ed25519_path.join("fd_curve25519_tables.c"),
+        ed25519_path.join("fd_f25519.c"),
+        ed25519_path.join("fd_x25519.c"),
+        ed25519_path.join("fd_ristretto255.c"),
+        sha512_path.join("fd_sha512.h"),
+        sha512_path.join("fd_sha512.c"),
+        paths.util_module("fd_util_base.h"),
+    ];
 
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     let wrapper_path = out_path.join("ed25519_wrapper.h");
@@ -89,25 +51,43 @@ fn main() {
         .wrap_static_fns(true)
         .wrap_static_fns_path(&wrapper_path)
         .header(wrapper_path.to_string_lossy())
-        .clang_arg(format!("-I{}", ballet_path.display()))
-        .clang_arg(format!("-I{}", util_path.display()))
-        .clang_arg(format!("-I{}", firedancer_path.display()))
+        .clang_arg(format!("-I{}", paths.ballet_module("ballet").display()))
+        .clang_arg(format!("-I{}", paths.util_module("util").display()))
+        .clang_arg(format!("-I{}", paths.vendor.display()))
         .clang_arg("-DFD_HAS_HOSTED=1")
         .clang_arg("-DFD_LOG_STYLE=0")
         .clang_arg("-std=c17")
         .clang_arg("-Wno-error=implicit-function-declaration");
 
-    // Add architecture-specific defines for bindgen
-    if is_x86_64 {
-        bindgen = bindgen
-            .clang_arg("-DFD_HAS_X86=1")
-            .clang_arg("-DFD_HAS_SSE=1")
-            .clang_arg("-DFD_HAS_AVX=1");
-    } else if is_aarch64 {
+    if target_info.is_x86_64() {
+        if is_emulated() {
+            bindgen = bindgen
+                .clang_arg("-DFD_HAS_X86=0")
+                .clang_arg("-DFD_HAS_SSE=0")
+                .clang_arg("-DFD_HAS_AVX=0")
+                .clang_arg("-DFD_HAS_AVX512=0");
+        } else {
+            bindgen = bindgen
+                .clang_arg("-DFD_HAS_X86=1")
+                .clang_arg("-DFD_HAS_SSE=1")
+                .clang_arg("-DFD_HAS_AVX=1")
+                .clang_arg("-msse")
+                .clang_arg("-msse2")
+                .clang_arg("-mavx")
+                .clang_arg("-mavx2")
+                .clang_arg("-DFD_HAS_AVX512=1")
+                .clang_arg("-mavx512f")
+                .clang_arg("-mavx512bw")
+                .clang_arg("-mavx512dq")
+                .clang_arg("-mavx512vl")
+                .clang_arg("-mavx512ifma")
+                .clang_arg("-mavx512vbmi");
+        }
+    } else if target_info.is_aarch64() {
         bindgen = bindgen.clang_arg("-DFD_HAS_ARM=1");
     }
 
-    if is_macos {
+    if target_info.is_macos() {
         bindgen = bindgen.clang_arg("-DSIGPOLL=SIGIO");
     }
 
@@ -126,19 +106,6 @@ fn main() {
         .allowlist_var("FD_SHA512_.*")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
 
-    if is_x86_64 {
-        bindgen = bindgen
-            .clang_arg("-DFD_HAS_X86=1")
-            .clang_arg("-DFD_HAS_SSE=1")
-            .clang_arg("-DFD_HAS_AVX=1");
-    } else if is_aarch64 {
-        bindgen = bindgen.clang_arg("-DFD_HAS_ARM=1");
-    }
-
-    if is_macos {
-        bindgen = bindgen.clang_arg("-DSIGPOLL=SIGIO");
-    }
-
     let bindings = bindgen.generate().expect("Unable to generate bindings");
 
     bindings
@@ -156,9 +123,9 @@ fn main() {
         .file(ed25519_path.join("fd_x25519.c"))
         .file(ed25519_path.join("fd_ristretto255.c"))
         .file(sha512_path.join("fd_sha512.c"))
-        .include(&ballet_path)
-        .include(&util_path)
-        .include(&firedancer_path)
+        .include(&paths.ballet_module("ballet"))
+        .include(&paths.util_module("util"))
+        .include(&paths.vendor)
         .define("FD_HAS_HOSTED", "1")
         .define("FD_LOG_STYLE", "0")
         .flag("-std=c17")
@@ -166,43 +133,44 @@ fn main() {
         .flag("-fPIC")
         .flag("-Wno-error=implicit-function-declaration");
 
-    // Add architecture-specific optimizations
-    if is_x86_64 {
-        build
-            .define("FD_HAS_X86", "1")
-            .define("FD_HAS_SSE", "1")
-            .define("FD_HAS_AVX", "1");
-
-        // Add AVX512 implementations if available
-        let avx512_path = ed25519_path.join("avx512");
-        if avx512_path.exists() {
+    if target_info.is_x86_64() {
+        if is_emulated() {
             build
-                .file(avx512_path.join("fd_curve25519.c"))
-                .file(avx512_path.join("fd_curve25519_secure.c"))
-                .file(avx512_path.join("fd_f25519.c"))
-                .file(avx512_path.join("fd_r43x6.c"))
-                .file(avx512_path.join("fd_r43x6_ge.c"));
-        }
-
-        // Add table implementations
-        let table_path = ed25519_path.join("table");
-        if table_path.exists() {
+                .define("FD_HAS_X86", "0")
+                .define("FD_HAS_SSE", "0")
+                .define("FD_HAS_AVX", "0")
+                .define("FD_HAS_AVX512", "0");
+        } else {
             build
-                .file(table_path.join("fd_curve25519_table_avx512.c"))
-                .file(table_path.join("fd_f25519_table_avx512.c"));
+                .define("FD_HAS_X86", "1")
+                .define("FD_HAS_SSE", "1")
+                .define("FD_HAS_AVX", "1")
+                .flag("-msse")
+                .flag("-msse2")
+                .flag("-mavx")
+                .flag("-mavx2")
+                .file(sha512_path.join("fd_sha512_core_avx2.S"));
+
+            let avx512_path = ed25519_path.join("avx512");
+            if avx512_path.exists() {
+                build
+                    .define("FD_HAS_AVX512", "1")
+                    .flag("-mavx512f")
+                    .flag("-mavx512bw")
+                    .flag("-mavx512dq")
+                    .flag("-mavx512vl")
+                    .flag("-mavx512ifma")
+                    .flag("-mavx512vbmi")
+                    .file(avx512_path.join("fd_curve25519.c"))
+                    .file(avx512_path.join("fd_curve25519_secure.c"))
+                    .file(avx512_path.join("fd_f25519.c"))
+                    .file(avx512_path.join("fd_r43x6.c"))
+                    .file(avx512_path.join("fd_r43x6_ge.c"));
+            }
         }
-    } else if is_aarch64 {
+    } else if target_info.is_aarch64() {
         build.define("FD_HAS_ARM", "1");
-
-        // Skip table implementations for now - they have dependency issues
-        // let table_path = ed25519_path.join("table");
-        // if table_path.exists() {
-        //     build
-        //         .file(table_path.join("fd_curve25519_table_ref.c"))
-        //         .file(table_path.join("fd_f25519_table_ref.c"));
-        // }
     } else {
-        // Add reference implementations for other architectures
         let ref_path = ed25519_path.join("ref");
         if ref_path.exists() {
             build
@@ -210,17 +178,9 @@ fn main() {
                 .file(ref_path.join("fd_curve25519_secure.c"))
                 .file(ref_path.join("fd_f25519.c"));
         }
-
-        // Skip table implementations for now - they have dependency issues
-        // let table_path = ed25519_path.join("table");
-        // if table_path.exists() {
-        //     build
-        //         .file(table_path.join("fd_curve25519_table_ref.c"))
-        //         .file(table_path.join("fd_f25519_table_ref.c"));
-        // }
     }
 
-    if is_macos {
+    if target_info.is_macos() {
         build.define("SIGPOLL", "SIGIO");
     }
 

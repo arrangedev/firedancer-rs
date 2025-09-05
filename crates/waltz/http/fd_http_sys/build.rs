@@ -204,6 +204,7 @@ int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags) {
         .include(&firedancer_path)
         .define("FD_HAS_HOSTED", "1")
         .define("FD_LOG_STYLE", "0")
+        .define("_GNU_SOURCE", "1")
         .flag("-std=c17")
         .flag("-O3")
         .flag("-fPIC")

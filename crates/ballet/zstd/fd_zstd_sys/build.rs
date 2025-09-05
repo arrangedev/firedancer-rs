@@ -56,7 +56,12 @@ fn main() {
         if cfg!(target_os = "macos") {
             "/opt/homebrew/opt/zstd".to_string()
         } else {
-            "/usr".to_string()
+            // For Linux, check common locations
+            if std::path::Path::new("/usr/lib/x86_64-linux-gnu/libzstd.so").exists() {
+                "/usr".to_string()
+            } else {
+                "/usr".to_string()
+            }
         }
     });
 
@@ -71,6 +76,7 @@ fn main() {
         .clang_arg("-DFD_HAS_HOSTED=1")
         .clang_arg("-DFD_HAS_ZSTD=1")
         .clang_arg("-DFD_LOG_STYLE=0")
+        .clang_arg("-D_GNU_SOURCE")
         .clang_arg("-std=c17")
         .clang_arg("-Wno-error=implicit-function-declaration")
         .use_core()
@@ -80,11 +86,23 @@ fn main() {
         .allowlist_var("FD_ZSTD_.*")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
 
+    // Check for emulated environment
+    let is_emulated = std::fs::read_to_string("/proc/cpuinfo")
+        .map(|cpuinfo| cpuinfo.contains("asimd") || cpuinfo.contains("neon"))
+        .unwrap_or(false);
+
     if is_x86_64 {
-        bindgen = bindgen
-            .clang_arg("-DFD_HAS_X86=1")
-            .clang_arg("-DFD_HAS_SSE=1")
-            .clang_arg("-DFD_HAS_AVX=1");
+        if is_emulated {
+            bindgen = bindgen
+                .clang_arg("-DFD_HAS_X86=0")
+                .clang_arg("-DFD_HAS_SSE=0")
+                .clang_arg("-DFD_HAS_AVX=0");
+        } else {
+            bindgen = bindgen
+                .clang_arg("-DFD_HAS_X86=1")
+                .clang_arg("-DFD_HAS_SSE=1")
+                .clang_arg("-DFD_HAS_AVX=1");
+        }
     } else if is_aarch64 {
         bindgen = bindgen.clang_arg("-DFD_HAS_ARM=1");
     }
@@ -99,13 +117,20 @@ fn main() {
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
 
+    // Add library search paths and link the library
     println!("cargo:rustc-link-search=native={}/lib", zstd_prefix);
-    println!("cargo:rustc-link-lib=zstd");
+    if target.contains("linux") {
+        println!("cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu");
+        println!("cargo:rustc-link-search=native=/usr/lib");
+        println!("cargo:rustc-link-search=native=/lib/x86_64-linux-gnu");
+    }
+    println!("cargo:rustc-link-lib=dylib=zstd");
 
     let stub_c_path = out_path.join("fd_log_stub.c");
     std::fs::write(
         &stub_c_path,
         r#"
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -158,16 +183,32 @@ fd_log_wallclock( void ) {
         .define("FD_HAS_HOSTED", "1")
         .define("FD_HAS_ZSTD", "1")
         .define("FD_LOG_STYLE", "0")
+        .define("_GNU_SOURCE", "1")
         .flag("-std=c17")
         .flag("-O3")
         .flag("-fPIC")
-        .flag("-Wno-error=implicit-function-declaration");
+        .flag("-Wno-error=implicit-function-declaration")
+        .flag(&format!("-L{}/lib", zstd_prefix));
+
+    if target.contains("linux") {
+        build
+            .flag("-L/usr/lib/x86_64-linux-gnu")
+            .flag("-L/usr/lib")
+            .flag("-lzstd");
+    }
 
     if is_x86_64 {
-        build
-            .define("FD_HAS_X86", "1")
-            .define("FD_HAS_SSE", "1")
-            .define("FD_HAS_AVX", "1");
+        if is_emulated {
+            build
+                .define("FD_HAS_X86", "0")
+                .define("FD_HAS_SSE", "0")
+                .define("FD_HAS_AVX", "0");
+        } else {
+            build
+                .define("FD_HAS_X86", "1")
+                .define("FD_HAS_SSE", "1")
+                .define("FD_HAS_AVX", "1");
+        }
     } else if is_aarch64 {
         build.define("FD_HAS_ARM", "1");
     }

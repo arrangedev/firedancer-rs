@@ -89,8 +89,8 @@ mod tests {
             let mut encoded = vec![0u8; encoded_size.max(1)];
 
             let encoded_len = fd_base64_encode(
-                encoded.as_mut_ptr() as *mut i8,
-                input.as_ptr() as *const std::ffi::c_void,
+                encoded.as_mut_ptr() as *mut core::ffi::c_char,
+                input.as_ptr() as *const core::ffi::c_void,
                 input.len() as u64,
             );
 
@@ -106,8 +106,8 @@ mod tests {
             let mut encoded = vec![0u8; encoded_size];
 
             let encoded_len = fd_base64_encode(
-                encoded.as_mut_ptr() as *mut i8,
-                input.as_ptr() as *const std::ffi::c_void,
+                encoded.as_mut_ptr() as *mut core::ffi::c_char,
+                input.as_ptr() as *const core::ffi::c_void,
                 input.len() as u64,
             );
 
@@ -124,7 +124,7 @@ mod tests {
 
             let decoded_len = fd_base64_decode(
                 decoded.as_mut_ptr(),
-                encoded.as_ptr() as *const i8,
+                encoded.as_ptr() as *const core::ffi::c_char,
                 encoded_len,
             );
 
@@ -154,8 +154,8 @@ mod tests {
                 let mut encoded = vec![0u8; encoded_size.max(1)];
 
                 let encoded_len = fd_base64_encode(
-                    encoded.as_mut_ptr() as *mut i8,
-                    input.as_ptr() as *const std::ffi::c_void,
+                    encoded.as_mut_ptr() as *mut core::ffi::c_char,
+                    input.as_ptr() as *const core::ffi::c_void,
                     input.len() as u64,
                 );
 
@@ -172,21 +172,21 @@ mod tests {
 
                 let decoded_len = fd_base64_decode(
                     decoded.as_mut_ptr(),
-                    encoded.as_ptr() as *const i8,
+                    encoded.as_ptr() as *const core::ffi::c_char,
                     encoded_len,
                 );
 
                 assert!(
                     decoded_len >= 0,
                     "Failed to decode for input: {:?}",
-                    std::str::from_utf8(input)
+                    core::str::from_utf8(input)
                 );
                 decoded.truncate(decoded_len as usize);
                 assert_eq!(
                     &decoded,
                     input,
                     "Round-trip failed for input: {:?}",
-                    std::str::from_utf8(input)
+                    core::str::from_utf8(input)
                 );
             }
         }
@@ -206,7 +206,7 @@ mod tests {
 
                 let decoded_len = fd_base64_decode(
                     decoded.as_mut_ptr(),
-                    input.as_ptr() as *const i8,
+                    input.as_ptr() as *const core::ffi::c_char,
                     input.len() as u64,
                 );
 
@@ -215,7 +215,7 @@ mod tests {
                     decoded_len,
                     -1,
                     "Should fail for invalid input: {:?}",
-                    std::str::from_utf8(input)
+                    core::str::from_utf8(input)
                 );
             }
         }

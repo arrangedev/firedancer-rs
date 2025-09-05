@@ -10,5 +10,4 @@ links = "fded25519"
 [build-dependencies]
 bindgen = { version = "0.72.1" }
 cc = "1.0"
-
-[dev-dependencies]
+firedancer-rs-common = { path = "../../../common" }

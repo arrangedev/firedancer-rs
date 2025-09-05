@@ -131,6 +131,7 @@ fn main() {
         .clang_arg(format!("-I{}", firedancer_path.display()))
         .clang_arg("-DFD_HAS_HOSTED=1")
         .clang_arg("-DFD_LOG_STYLE=0")
+        .clang_arg("-D_GNU_SOURCE")
         .clang_arg("-std=c17")
         .clang_arg("-Wno-error=implicit-function-declaration")
         .wrap_static_fns_path(&wrapper_c_path)
@@ -182,6 +183,8 @@ fn main() {
         .include(&firedancer_path)
         .define("FD_HAS_HOSTED", "1")
         .define("FD_LOG_STYLE", "0")
+        .define("_GNU_SOURCE", "1")
+        .define("FD_HAS_ATOMIC", "1")
         .flag("-std=c17")
         .flag("-O3")
         .flag("-fPIC")
@@ -199,6 +202,7 @@ fn main() {
         .define("FD_HAS_THREADS", "1") // requires threading
         .define("FD_HAS_ALLOCA", "1")  // uses alloca
         .define("FD_LOG_STYLE", "0")
+        .define("_GNU_SOURCE", "1")
         .flag("-std=c++17")
         .flag("-O3")
         .flag("-fPIC")
@@ -237,6 +241,7 @@ fn main() {
             .include(&firedancer_path)
             .define("FD_HAS_HOSTED", "1")
             .define("FD_LOG_STYLE", "0")
+            .define("_GNU_SOURCE", "1")
             .flag("-std=c17")
             .flag("-O3")
             .flag("-fPIC")

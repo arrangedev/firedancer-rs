@@ -52,6 +52,8 @@ fn main() {
         .include(&firedancer_path)
         .define("FD_HAS_HOSTED", "1")
         .define("FD_LOG_STYLE", "0")
+        .define("_GNU_SOURCE", "1")
+        .define("FD_HAS_ATOMIC", "1")
         .flag("-std=c17")
         .flag("-O3")
         .flag("-fPIC")

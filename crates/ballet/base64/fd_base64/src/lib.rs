@@ -1,20 +1,6 @@
-//! Safe Rust API for Firedancer Base64 utilities
+//! Safe abstractions over the raw bindings in `fd_base64_sys`.
 //!
-//! This crate provides safe abstractions over the raw FFI bindings in `fd_base64_sys`.
-//! The Base64 implementation follows RFC 4648 standard with padding support and provides
-//! high-performance encoding and decoding operations.
-//!
-//! ## Features
-//!
-//! - **RFC 4648 compliant**: Standard Base64 alphabet with padding
-//! - **High performance**: Optimized C implementation with Rust safety
-//! - **Zero-copy where possible**: Efficient memory usage
-//! - **Safe API**: All unsafe operations are encapsulated
-//! - **Comprehensive error handling**: Clear error messages for invalid input
-//!
-//! ## Usage
-//!
-//! ### Basic encoding and decoding
+//! ## Encoding/decoding
 //!
 //! ```rust
 //! use fd_base64::{encode, decode};
@@ -25,7 +11,7 @@
 //! assert_eq!(decoded, data);
 //! ```
 //!
-//! ### Working with strings
+//! ## Strings
 //!
 //! ```rust
 //! use fd_base64::{encode_string, decode_string};
@@ -36,7 +22,7 @@
 //! assert_eq!(decoded, text);
 //! ```
 //!
-//! ### In-place operations
+//! ## In-place
 //!
 //! ```rust
 //! use fd_base64::{encode_to_vec, decode_to_vec};
@@ -52,18 +38,17 @@
 
 use fd_base64_sys as sys;
 
-/// Error types that can occur during Base64 operations
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Base64Error {
-    /// The input contains invalid Base64 characters
+    /// input contains invalid Base64 characters
     InvalidCharacter,
-    /// The input has invalid length or padding
+    /// input has invalid length or padding
     InvalidLength,
-    /// The input contains invalid padding
+    /// input contains invalid padding
     InvalidPadding,
-    /// The output buffer is too small
+    /// output buffer is too small
     BufferTooSmall,
-    /// Invalid input parameters
+    /// invalid input parameters
     InvalidInput,
 }
 
@@ -82,36 +67,20 @@ impl std::fmt::Display for Base64Error {
 impl std::error::Error for Base64Error {}
 
 /// Calculate the encoded size for a given input length
-///
-/// This returns the exact number of characters needed to encode `input_len` bytes.
-/// The result includes padding characters.
+/// returning the exact number of characters needed to encode `input_len` bytes (includes padding)
 pub fn encoded_size(input_len: usize) -> usize {
     sys::FD_BASE64_ENC_SZ(input_len as sys::ulong) as usize
 }
 
-/// Calculate the maximum decoded size for a given encoded length
+/// Calculate the maximum decoded size for a given encoded length, returning the max
+/// number of bytes that could result from decoding `encoded_len` base64 chars.
 ///
-/// This returns the maximum number of bytes that could result from decoding
-/// `encoded_len` Base64 characters. The actual decoded length may be smaller
-/// due to padding.
+/// The actual decoded length may be smaller due to padding
 pub fn decoded_size(encoded_len: usize) -> usize {
     sys::FD_BASE64_DEC_SZ(encoded_len as sys::ulong) as usize
 }
 
-/// Encode bytes to Base64
-///
-/// Returns a vector containing the Base64-encoded representation of the input.
-/// The output uses the standard Base64 alphabet with padding.
-///
-/// # Examples
-///
-/// ```rust
-/// use fd_base64::encode;
-///
-/// let data = b"Hello, World!";
-/// let encoded = encode(data);
-/// assert_eq!(encoded, b"SGVsbG8sIFdvcmxkIQ==");
-/// ```
+/// Encode bytes to Base64 using the standard Base64 alphabet with padding
 pub fn encode(input: &[u8]) -> Vec<u8> {
     if input.is_empty() {
         return Vec::new();
@@ -122,7 +91,7 @@ pub fn encode(input: &[u8]) -> Vec<u8> {
 
     let actual_len = unsafe {
         sys::fd_base64_encode(
-            output.as_mut_ptr() as *mut i8,
+            output.as_mut_ptr() as *mut std::os::raw::c_char,
             input.as_ptr() as *const std::ffi::c_void,
             input.len() as sys::ulong,
         )
@@ -157,7 +126,7 @@ pub fn encode_to_vec(input: &[u8], output: &mut Vec<u8>) {
 
     let actual_len = unsafe {
         sys::fd_base64_encode(
-            output.as_mut_ptr().add(start_len) as *mut i8,
+            output.as_mut_ptr().add(start_len) as *mut std::os::raw::c_char,
             input.as_ptr() as *const std::ffi::c_void,
             input.len() as sys::ulong,
         )
@@ -209,7 +178,7 @@ pub fn decode(input: &[u8]) -> Result<Vec<u8>, Base64Error> {
     let decoded_len = unsafe {
         sys::fd_base64_decode(
             output.as_mut_ptr(),
-            input.as_ptr() as *const i8,
+            input.as_ptr() as *const std::os::raw::c_char,
             input.len() as sys::ulong,
         )
     };
@@ -262,7 +231,7 @@ pub fn decode_to_vec(input: &[u8], output: &mut Vec<u8>) -> Result<(), Base64Err
     let decoded_len = unsafe {
         sys::fd_base64_decode(
             output.as_mut_ptr().add(start_len),
-            input.as_ptr() as *const i8,
+            input.as_ptr() as *const std::os::raw::c_char,
             input.len() as sys::ulong,
         )
     };
@@ -330,7 +299,7 @@ pub mod inplace {
 
         let actual_len = unsafe {
             sys::fd_base64_encode(
-                output.as_mut_ptr() as *mut i8,
+                output.as_mut_ptr() as *mut std::os::raw::c_char,
                 input.as_ptr() as *const std::ffi::c_void,
                 input.len() as sys::ulong,
             )
@@ -361,7 +330,7 @@ pub mod inplace {
         let decoded_len = unsafe {
             sys::fd_base64_decode(
                 output.as_mut_ptr(),
-                input.as_ptr() as *const i8,
+                input.as_ptr() as *const std::os::raw::c_char,
                 input.len() as sys::ulong,
             )
         };
