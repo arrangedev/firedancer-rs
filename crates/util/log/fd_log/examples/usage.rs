@@ -1,4 +1,4 @@
-use libfd_log::{fd_dbg, fd_info, fd_notice, fd_warn, FdLog, LogLevel};
+use fd_log::{fd_dbg, fd_info, fd_notice, fd_warn, FdLog, LogLevel};
 
 fn main() {
     fd_info!("  app_id: {}", FdLog::app_id());

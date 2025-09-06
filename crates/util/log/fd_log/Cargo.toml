@@ -1,5 +1,5 @@
 [package]
-name = "libfd-log"
+name = "fd_log"
 version.workspace = true
 edition.workspace = true
 

@@ -1,18 +1,18 @@
+use std::collections::HashMap;
 use std::env;
-use std::fs::{metadata, read_to_string};
+use std::fs::{self, metadata, read_to_string};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Target architecture and platform detection
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Architecture {
+pub enum Arch {
     X86_64,
     AArch64,
     Other,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Platform {
+pub enum OsTarget {
     Linux,
     MacOS,
     Windows,
@@ -20,77 +20,85 @@ pub enum Platform {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TargetInfo {
-    pub arch: Architecture,
-    pub platform: Platform,
+pub struct TargetSpec {
+    pub arch: Arch,
+    pub os_target: OsTarget,
     pub is_emulated: bool,
 }
 
-impl TargetInfo {
+impl TargetSpec {
     pub fn new() -> Self {
         let target = env::var("TARGET").unwrap_or_else(|_| "unknown".to_string());
         let is_emulated = is_emulated();
 
         let arch = if target.contains("x86_64") {
-            Architecture::X86_64
+            Arch::X86_64
         } else if target.contains("aarch64") || target.contains("arm") {
-            Architecture::AArch64
+            Arch::AArch64
         } else {
-            Architecture::Other
+            Arch::Other
         };
 
-        let platform = if target.contains("apple") {
-            Platform::MacOS
+        let os_target = if target.contains("apple") {
+            OsTarget::MacOS
         } else if target.contains("linux") {
-            Platform::Linux
+            OsTarget::Linux
         } else if target.contains("windows") {
-            Platform::Windows
+            OsTarget::Windows
         } else {
-            Platform::Other
+            OsTarget::Other
         };
 
         Self {
             arch,
-            platform,
+            os_target,
             is_emulated,
         }
     }
 
+    #[inline]
     pub fn is_x86_64(&self) -> bool {
-        matches!(self.arch, Architecture::X86_64)
+        matches!(self.arch, Arch::X86_64)
     }
 
+    #[inline]
     pub fn is_aarch64(&self) -> bool {
-        matches!(self.arch, Architecture::AArch64)
+        matches!(self.arch, Arch::AArch64)
     }
 
+    #[inline]
     pub fn is_macos(&self) -> bool {
-        matches!(self.platform, Platform::MacOS)
+        matches!(self.os_target, OsTarget::MacOS)
     }
 
+    #[inline]
     pub fn is_linux(&self) -> bool {
-        matches!(self.platform, Platform::Linux)
+        matches!(self.os_target, OsTarget::Linux)
     }
 
+    /// we generally don't care about windows here
+    #[inline]
+    #[allow(unused)]
     pub fn is_windows(&self) -> bool {
-        matches!(self.platform, Platform::Windows)
+        matches!(self.os_target, OsTarget::Windows)
     }
 }
 
-impl Default for TargetInfo {
+impl Default for TargetSpec {
     fn default() -> Self {
         Self::new()
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct FiredancerPaths {
+pub struct VendorPaths {
     pub vendor: PathBuf,
     pub ballet: PathBuf,
     pub util: PathBuf,
+    pub other: HashMap<String, PathBuf>,
 }
 
-impl FiredancerPaths {
+impl VendorPaths {
     pub fn new() -> Self {
         let vendor = PathBuf::from("../../../../vendor");
         let ballet = vendor.join("ballet");
@@ -100,6 +108,7 @@ impl FiredancerPaths {
             vendor,
             ballet,
             util,
+            other: HashMap::new(),
         }
     }
 
@@ -112,7 +121,18 @@ impl FiredancerPaths {
             vendor,
             ballet,
             util,
+            other: HashMap::new(),
         }
+    }
+
+    pub fn with_mod_paths(mut self, modnames: &[&str]) -> Self {
+        let vendor = PathBuf::from("../../../../vendor");
+
+        for name in modnames {
+            self.other.insert(name.to_string(), vendor.join(name));
+        }
+
+        self
     }
 
     pub fn ballet_module<P: AsRef<Path>>(&self, module: P) -> PathBuf {
@@ -122,9 +142,101 @@ impl FiredancerPaths {
     pub fn util_module<P: AsRef<Path>>(&self, module: P) -> PathBuf {
         self.util.join(module)
     }
+
+    pub fn module(&self, module: &str) -> PathBuf {
+        self.other
+            .get(module)
+            .unwrap_or_else(|| {
+                panic!("Module {} not found", module);
+            })
+            .to_path_buf()
+    }
+
+    pub fn find_vendor_directory() -> Option<PathBuf> {
+        let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+        let possible_paths = vec![
+            manifest_dir.join("../../../../vendor"),
+            manifest_dir
+                .parent()?
+                .parent()?
+                .parent()?
+                .parent()?
+                .join("vendor"),
+            manifest_dir.join("vendor"),
+        ];
+
+        for path in possible_paths {
+            if path.exists() && path.join("util").exists() {
+                return Some(path);
+            }
+        }
+
+        None
+    }
+
+    pub fn ensure_vendor_files(required_files: &[(&str, &str)]) -> Result<PathBuf, String> {
+        if let Some(vendor_path) = Self::find_vendor_directory() {
+            for (src_path, _) in required_files {
+                if !vendor_path.join(src_path).exists() {
+                    return Err(format!(
+                        "Required file not found: {}",
+                        vendor_path.join(src_path).display()
+                    ));
+                }
+            }
+            return Ok(vendor_path);
+        }
+
+        let out_dir = PathBuf::from(env::var("OUT_DIR").map_err(|_| "OUT_DIR not set")?);
+        let vendor_out = out_dir.join("vendor");
+
+        let all_files_exist = required_files
+            .iter()
+            .all(|(_, dst_path)| vendor_out.join(dst_path).exists());
+
+        if all_files_exist {
+            return Ok(vendor_out);
+        }
+
+        if let Some(original_vendor) = Self::find_vendor_directory() {
+            for (_, dst_path) in required_files {
+                let dst_full_path = vendor_out.join(dst_path);
+                if let Some(parent) = dst_full_path.parent() {
+                    fs::create_dir_all(parent).map_err(|e| {
+                        format!("Failed to create directory {}: {}", parent.display(), e)
+                    })?;
+                }
+            }
+
+            for (src_path, dst_path) in required_files {
+                let src_full_path = original_vendor.join(src_path);
+                let dst_full_path = vendor_out.join(dst_path);
+
+                if !src_full_path.exists() {
+                    return Err(format!(
+                        "Required source file not found: {}",
+                        src_full_path.display()
+                    ));
+                }
+
+                fs::copy(&src_full_path, &dst_full_path).map_err(|e| {
+                    format!(
+                        "Failed to copy {} to {}: {}",
+                        src_full_path.display(),
+                        dst_full_path.display(),
+                        e
+                    )
+                })?;
+            }
+
+            return Ok(vendor_out);
+        }
+
+        Err("Cannot find vendor directory with required source files. This crate requires access to the libfiredancer vendor directory.".to_string())
+    }
 }
 
-impl Default for FiredancerPaths {
+impl Default for VendorPaths {
     fn default() -> Self {
         Self::new()
     }
@@ -143,7 +255,7 @@ impl RerunHelper {
         }
     }
 
-    pub fn add_directory_with_extensions<P: AsRef<Path>>(
+    pub fn add_dir_with_extensions<P: AsRef<Path>>(
         dir: P,
         extensions: &[&str],
     ) -> Result<(), std::io::Error> {
@@ -167,11 +279,11 @@ impl RerunHelper {
         Ok(())
     }
 
-    pub fn add_c_files<P: AsRef<Path>>(dir: P) -> Result<(), std::io::Error> {
-        Self::add_directory_with_extensions(dir, &["c", "cpp", "cxx", "cc", "h", "hpp", "hxx"])
+    pub fn add_c_src<P: AsRef<Path>>(dir: P) -> Result<(), std::io::Error> {
+        Self::add_dir_with_extensions(dir, &["c", "cpp", "cxx", "cc", "h", "hpp", "hxx"])
     }
 
-    pub fn add_files_matching<P: AsRef<Path>>(dir: P, pattern: &str) -> Result<(), std::io::Error> {
+    pub fn add_matched_glob<P: AsRef<Path>>(dir: P, pattern: &str) -> Result<(), std::io::Error> {
         let dir = dir.as_ref();
         if !dir.exists() {
             return Ok(());
@@ -193,15 +305,15 @@ impl RerunHelper {
     }
 }
 
-pub struct CCBuildHelper {
+pub struct CCBuilder {
     build: cc::Build,
-    target_info: TargetInfo,
+    target_info: TargetSpec,
 }
 
-impl CCBuildHelper {
+impl CCBuilder {
     pub fn new() -> Self {
         let mut build = cc::Build::new();
-        let target_info = TargetInfo::new();
+        let target_info = TargetSpec::new();
 
         build
             .define("FD_HAS_HOSTED", "1")
@@ -212,7 +324,7 @@ impl CCBuildHelper {
         Self { build, target_info }
     }
 
-    pub fn with_firedancer_includes(mut self, paths: &FiredancerPaths) -> Self {
+    pub fn with_fd_includes(mut self, paths: &VendorPaths) -> Self {
         self.build
             .include(&paths.ballet)
             .include(&paths.util)
@@ -220,9 +332,9 @@ impl CCBuildHelper {
         self
     }
 
-    pub fn with_arch_optimizations(mut self) -> Self {
+    pub fn with_arch_opts(mut self) -> Self {
         match self.target_info.arch {
-            Architecture::X86_64 => {
+            Arch::X86_64 => {
                 if self.target_info.is_emulated {
                     self.build
                         .define("FD_HAS_X86", "0")
@@ -240,33 +352,33 @@ impl CCBuildHelper {
                         .flag("-mavx2");
                 }
             }
-            Architecture::AArch64 => {
+            Arch::AArch64 => {
                 self.build.define("FD_HAS_ARM", "1");
             }
-            Architecture::Other => {}
+            Arch::Other => {}
         }
         self
     }
 
-    pub fn with_platform_config(mut self) -> Self {
-        match self.target_info.platform {
-            Platform::MacOS => {
+    pub fn with_target_cfg(mut self) -> Self {
+        match self.target_info.os_target {
+            OsTarget::MacOS => {
                 self.build.define("SIGPOLL", "SIGIO");
             }
-            Platform::Linux => {}
-            Platform::Windows => {}
-            Platform::Other => {}
+            OsTarget::Linux => {}
+            OsTarget::Windows => {}
+            OsTarget::Other => {}
         }
         self
     }
 
-    pub fn with_logging(mut self, style: u32) -> Self {
+    pub fn with_logs(mut self, style: u32) -> Self {
         self.build
             .define("FD_LOG_STYLE", style.to_string().as_str());
         self
     }
 
-    pub fn with_warning_suppressions(mut self) -> Self {
+    pub fn suppress_warnings(mut self) -> Self {
         self.build.flag("-Wno-error=implicit-function-declaration");
         self
     }
@@ -283,7 +395,7 @@ impl CCBuildHelper {
         self
     }
 
-    pub fn with_avx512_files<P: AsRef<Path>>(mut self, avx512_dir: P) -> Self {
+    pub fn with_avx512<P: AsRef<Path>>(mut self, avx512_dir: P, files: &[&str]) -> Self {
         if self.target_info.is_x86_64() && !self.target_info.is_emulated {
             let avx512_path = avx512_dir.as_ref();
             if avx512_path.exists() {
@@ -296,15 +408,15 @@ impl CCBuildHelper {
                     .flag("-mavx512ifma")
                     .flag("-mavx512vbmi");
 
-                let avx512_files = [
-                    "fd_curve25519.c",
-                    "fd_curve25519_secure.c",
-                    "fd_f25519.c",
-                    "fd_r43x6.c",
-                    "fd_r43x6_ge.c",
-                ];
+                // let avx512_files = [
+                //     "fd_curve25519.c",
+                //     "fd_curve25519_secure.c",
+                //     "fd_f25519.c",
+                //     "fd_r43x6.c",
+                //     "fd_r43x6_ge.c",
+                // ];
 
-                for file in &avx512_files {
+                for file in files {
                     let file_path = avx512_path.join(file);
                     if file_path.exists() {
                         self.build.file(file_path);
@@ -323,26 +435,26 @@ impl CCBuildHelper {
         &mut self.build
     }
 
-    pub fn target_info(&self) -> &TargetInfo {
+    pub fn target_info(&self) -> &TargetSpec {
         &self.target_info
     }
 }
 
-impl Default for CCBuildHelper {
+impl Default for CCBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
-pub struct BindgenHelper {
+pub struct BindgenBuilder {
     builder: bindgen::Builder,
-    target_info: TargetInfo,
+    target_info: TargetSpec,
 }
 
-impl BindgenHelper {
+impl BindgenBuilder {
     pub fn new() -> Self {
         let builder = bindgen::Builder::default();
-        let target_info = TargetInfo::new();
+        let target_info = TargetSpec::new();
 
         Self {
             builder,
@@ -355,7 +467,7 @@ impl BindgenHelper {
         self
     }
 
-    pub fn with_firedancer_includes(mut self, paths: &FiredancerPaths) -> Self {
+    pub fn with_fd_includes(mut self, paths: &VendorPaths) -> Self {
         self.builder = self
             .builder
             .clang_arg(format!("-I{}", paths.ballet.display()))
@@ -364,7 +476,7 @@ impl BindgenHelper {
         self
     }
 
-    pub fn with_firedancer_clang_args(mut self) -> Self {
+    pub fn with_fd_clang_args(mut self) -> Self {
         self.builder = self
             .builder
             .clang_arg("-DFD_HAS_HOSTED=1")
@@ -372,9 +484,9 @@ impl BindgenHelper {
         self
     }
 
-    pub fn with_arch_clang_args(mut self) -> Self {
+    pub fn with_clang_cfg(mut self) -> Self {
         match self.target_info.arch {
-            Architecture::X86_64 => {
+            Arch::X86_64 => {
                 if self.target_info.is_emulated {
                     self.builder = self
                         .builder
@@ -401,39 +513,39 @@ impl BindgenHelper {
                         .clang_arg("-mavx512vbmi");
                 }
             }
-            Architecture::AArch64 => {
+            Arch::AArch64 => {
                 self.builder = self.builder.clang_arg("-DFD_HAS_ARM=1");
             }
-            Architecture::Other => {}
+            Arch::Other => {}
         }
         self
     }
 
-    pub fn with_platform_clang_args(mut self) -> Self {
-        match self.target_info.platform {
-            Platform::MacOS => {
+    pub fn with_target_clang_cfg(mut self) -> Self {
+        match self.target_info.os_target {
+            OsTarget::MacOS => {
                 self.builder = self.builder.clang_arg("-DSIGPOLL=SIGIO");
             }
-            Platform::Linux => {}
-            Platform::Windows => {}
-            Platform::Other => {}
+            OsTarget::Linux => {}
+            OsTarget::Windows => {}
+            OsTarget::Other => {}
         }
         self
     }
 
-    pub fn with_logging(mut self, style: u32) -> Self {
+    pub fn with_logs(mut self, style: u32) -> Self {
         self.builder = self.builder.clang_arg(&format!("-DFD_LOG_STYLE={}", style));
         self
     }
 
-    pub fn with_warning_suppressions(mut self) -> Self {
+    pub fn suppress_warnings(mut self) -> Self {
         self.builder = self
             .builder
             .clang_arg("-Wno-error=implicit-function-declaration");
         self
     }
 
-    pub fn with_static_fn_wrapping<P: AsRef<Path>>(mut self, wrapper_path: P) -> Self {
+    pub fn with_static_fn_wrap<P: AsRef<Path>>(mut self, wrapper_path: P) -> Self {
         self.builder = self
             .builder
             .wrap_static_fns(true)
@@ -441,7 +553,7 @@ impl BindgenHelper {
         self
     }
 
-    pub fn allowlist_functions(mut self, patterns: &[&str]) -> Self {
+    pub fn allowlist_fns(mut self, patterns: &[&str]) -> Self {
         for pattern in patterns {
             self.builder = self.builder.allowlist_function(pattern);
         }
@@ -462,14 +574,14 @@ impl BindgenHelper {
         self
     }
 
-    pub fn with_cargo_callbacks(mut self) -> Self {
+    pub fn with_cargo_cb(mut self) -> Self {
         self.builder = self
             .builder
             .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
         self
     }
 
-    pub fn generate_and_write(self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn build(self, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
         let bindings = self.builder.generate()?;
 
         let out_path = PathBuf::from(env::var("OUT_DIR")?);
@@ -482,18 +594,19 @@ impl BindgenHelper {
         &mut self.builder
     }
 
-    pub fn target_info(&self) -> &TargetInfo {
+    pub fn target_spec(&self) -> &TargetSpec {
         &self.target_info
     }
 }
 
-impl Default for BindgenHelper {
+impl Default for BindgenBuilder {
     fn default() -> Self {
         Self::new()
     }
 }
 
-pub fn create_wrapper_header(
+#[inline]
+pub fn _generate_header(
     filename: &str,
     includes: &[&str],
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
@@ -510,6 +623,25 @@ pub fn create_wrapper_header(
     Ok(wrapper_path)
 }
 
+/// Finalize the build by generating bindings and compiling the C/Cpp source
+#[inline]
+pub fn _pipeline_finalize(
+    bindgen: bindgen::Builder,
+    build: cc::Build,
+    lib_name: &str,
+    outfile: Option<&str>,
+) {
+    let bindings = bindgen.generate().expect("Unable to generate bindings");
+    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+
+    bindings
+        .write_to_file(out_path.join(outfile.unwrap_or("bindings.rs")))
+        .expect("Couldn't write bindings!");
+
+    build.compile(lib_name);
+}
+
+#[inline]
 pub fn is_emulated() -> bool {
     if env::var("QEMU_CPU").is_ok()
         || read_to_string("/proc/version")

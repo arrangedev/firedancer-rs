@@ -1,12 +1,27 @@
+use firedancer_rs_common::VendorPaths;
 use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    let firedancer_path = PathBuf::from("../../../../vendor");
+    let required_files = vec![
+        ("util/log/fd_log.h", "util/log/fd_log.h"),
+        ("util/log/fd_log.c", "util/log/fd_log.c"),
+        ("util/tile/fd_tile.h", "util/tile/fd_tile.h"),
+        ("util/tile/fd_tile.c", "util/tile/fd_tile.c"),
+        ("util/io/fd_io.h", "util/io/fd_io.h"),
+        ("util/io/fd_io.c", "util/io/fd_io.c"),
+        ("util/cstr/fd_cstr.h", "util/cstr/fd_cstr.h"),
+        ("util/cstr/fd_cstr.c", "util/cstr/fd_cstr.c"),
+    ];
+
+    let firedancer_path = VendorPaths::ensure_vendor_files(&required_files)
+        .unwrap_or_else(|e| panic!("Failed to locate required vendor files: {}", e));
+
     let util_path = firedancer_path.join("util");
     let log_path = util_path.join("log");
     let tile_path = util_path.join("tile");
     let io_path = util_path.join("io");
+    let cstr_path = util_path.join("cstr");
 
     println!(
         "cargo:rerun-if-changed={}",
@@ -24,6 +39,10 @@ fn main() {
         "cargo:rerun-if-changed={}",
         io_path.join("fd_io.c").display()
     );
+    println!(
+        "cargo:rerun-if-changed={}",
+        cstr_path.join("fd_cstr.c").display()
+    );
 
     let target = env::var("TARGET").unwrap();
     let is_x86_64 = target.contains("x86_64");
@@ -35,6 +54,7 @@ fn main() {
         .file(log_path.join("fd_log.c"))
         .file(tile_path.join("fd_tile.c"))
         .file(io_path.join("fd_io.c"))
+        .file(cstr_path.join("fd_cstr.c"))
         .include(&util_path)
         .define("FD_HAS_HOSTED", "1")
         .define("_GNU_SOURCE", "1")
