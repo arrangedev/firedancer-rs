@@ -79,10 +79,15 @@ impl Pubkey {
         Ok(unsafe { Self::from_bytes_unchecked(bytes) })
     }
 
-    /// # SAFETY: It is up to the caller to ensure the bytes represent a valid public key, and
+    /// # Safety
+    /// It's up to the caller to ensure the bytes represent a valid public key, and
     /// are properly aligned.
     pub unsafe fn from_bytes_unchecked(bytes: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Self {
         Self { bytes: *bytes }
+    }
+
+    pub fn as_bytes(&self) -> &[u8; ED25519_PUBLIC_KEY_SIZE] {
+        &self.bytes
     }
 
     pub fn is_on_curve(&self) -> bool {
@@ -210,10 +215,6 @@ impl Pubkey {
         }
     }
 
-    pub fn as_bytes(&self) -> &[u8; ED25519_PUBLIC_KEY_SIZE] {
-        &self.bytes
-    }
-
     pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<bool, Ed25519Error> {
         unsafe {
             let mut sha = MaybeUninit::<sys::fd_sha512_t>::uninit();
@@ -324,7 +325,6 @@ impl Keypair {
 
     pub fn sign(&self, message: &[u8]) -> Result<Signature, Ed25519Error> {
         unsafe {
-            // Initialize SHA512 calculator
             let mut sha = MaybeUninit::<sys::fd_sha512_t>::uninit();
             sys::fd_sha512_init(sha.as_mut_ptr());
             let mut sha = sha.assume_init();
