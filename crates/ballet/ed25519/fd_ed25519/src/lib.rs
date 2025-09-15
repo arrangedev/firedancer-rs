@@ -55,8 +55,8 @@ fn convert_ed25519_error(code: i32) -> Ed25519Error {
 
 fn bytes_are_curve_point(bytes: [u8; 32]) -> bool {
     unsafe {
-        let mut point = MaybeUninit::<sys::fd_ristretto255_point_t>::uninit();
-        let result = sys::fd_ristretto255_point_frombytes(point.as_mut_ptr(), bytes.as_ptr());
+        let mut point = MaybeUninit::<sys::fd_ed25519_point_t>::uninit();
+        let result = sys::fd_ed25519_point_frombytes(point.as_mut_ptr(), bytes.as_ptr());
 
         if result.is_null() {
             return false;
@@ -64,7 +64,7 @@ fn bytes_are_curve_point(bytes: [u8; 32]) -> bool {
 
         let point = point.assume_init();
         let mut encoded = [0u8; 32];
-        sys::fd_ristretto255_point_tobytes(encoded.as_mut_ptr(), &point);
+        sys::fd_ed25519_point_tobytes(encoded.as_mut_ptr(), &point);
         encoded == bytes
     }
 }
@@ -658,13 +658,15 @@ mod tests {
     #[test]
     fn test_find_program_address() {
         let program_id = Pubkey::from([42u8; 32]);
-        let seeds = [&b"test"[..], &b"seed"[..]];
+        let seeds = [&b"other_test"[..], &b"some_seed"[..]];
 
         let (address1, bump1) = Pubkey::find_program_address(&seeds, &program_id).unwrap();
         let (address2, bump2) = Pubkey::find_program_address(&seeds, &program_id).unwrap();
 
         assert_eq!(address1, address2);
         assert_eq!(bump1, bump2);
+
+        println!("Found PDA: {:?} with bump {}", address1.as_bytes(), bump1);
 
         let mut seeds_with_bump = seeds.to_vec();
         let bump_seed = &[bump1];
