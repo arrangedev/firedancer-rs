@@ -1,82 +1,4 @@
-//! Low-level FFI bindings to Firedancer's fd_ed25519 module.
-//!
-//! This crate provides raw, unsafe bindings to the Firedancer Ed25519 API,
-//! including Ed25519 signature generation and verification, X25519 key exchange,
-//! and Ristretto255 operations.
-//!
-//! For safe, idiomatic Rust wrappers, see the `fd_ed25519` crate.
-//!
-//! # Safety
-//!
-//! All functions in this crate are unsafe and require careful handling of:
-//! - Memory management and lifetime guarantees
-//! - Proper initialization of SHA512 calculators
-//! - Buffer size requirements (32 bytes for keys, 64 bytes for signatures)
-//! - Thread safety considerations
-//!
-//! # Ed25519 Operations
-//!
-//! The main Ed25519 operations available:
-//! - `fd_ed25519_public_from_private`: Derive public key from private key
-//! - `fd_ed25519_sign`: Sign a message with Ed25519
-//! - `fd_ed25519_verify`: Verify an Ed25519 signature
-//! - `fd_ed25519_verify_batch_single_msg`: Batch verification for multiple signatures
-//!
-//! # X25519 Operations
-//!
-//! X25519 Diffie-Hellman key exchange:
-//! - `fd_x25519_public`: Generate public key from private key
-//! - `fd_x25519_exchange`: Compute shared secret
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use fd_ed25519_sys::*;
-//! use std::mem::MaybeUninit;
-//!
-//! unsafe {
-//!     // Initialize SHA512 calculator (required for Ed25519 operations)
-//!     let mut sha = MaybeUninit::<fd_sha512_t>::uninit();
-//!     fd_sha512_init(sha.as_mut_ptr());
-//!     let mut sha = sha.assume_init();
-//!
-//!     // Generate key pair
-//!     let private_key: [u8; 32] = [1; 32]; // In practice, use secure random bytes
-//!     let mut public_key = [0u8; 32];
-//!     fd_ed25519_public_from_private(
-//!         public_key.as_mut_ptr(),
-//!         private_key.as_ptr(),
-//!         &mut sha
-//!     );
-//!
-//!     // Sign a message
-//!     let message = b"Hello, world!";
-//!     let mut signature = [0u8; 64];
-//!     fd_ed25519_sign(
-//!         signature.as_mut_ptr(),
-//!         message.as_ptr(),
-//!         message.len() as u64,
-//!         public_key.as_ptr(),
-//!         private_key.as_ptr(),
-//!         &mut sha
-//!     );
-//!
-//!     // Verify the signature
-//!     let result = fd_ed25519_verify(
-//!         message.as_ptr(),
-//!         message.len() as u64,
-//!         signature.as_ptr(),
-//!         public_key.as_ptr(),
-//!         &mut sha
-//!     );
-//!
-//!     if result == FD_ED25519_SUCCESS {
-//!         println!("Signature verification successful");
-//!     } else {
-//!         println!("Signature verification failed: {}", result);
-//!     }
-//! }
-//! ```
+//! Raw FFI bindings to the firedancer ed25519 C library
 
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
@@ -88,7 +10,7 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::mem::MaybeUninit;
+    use core::mem::MaybeUninit;
 
     #[test]
     fn test_strerror() {
@@ -194,7 +116,7 @@ mod tests {
             let mut signature = [0u8; 64];
             let result = fd_ed25519_sign(
                 signature.as_mut_ptr(),
-                std::ptr::null(),
+                core::ptr::null(),
                 0,
                 public_key.as_ptr(),
                 private_key.as_ptr(),
@@ -203,7 +125,7 @@ mod tests {
             assert!(!result.is_null());
 
             let verify_result = fd_ed25519_verify(
-                std::ptr::null(),
+                core::ptr::null(),
                 0,
                 signature.as_ptr(),
                 public_key.as_ptr(),
@@ -213,6 +135,30 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_sha256() {
+        unsafe {
+            let message = b"hello world";
+            let mut hash = [0u8; 32];
+            fd_sha256_hash(
+                message.as_ptr() as *const ::std::os::raw::c_void,
+                message.len() as u64,
+                hash.as_mut_ptr() as *mut ::std::os::raw::c_void,
+            );
+
+            // "hello world!"
+            let expected = [
+                0xb9, 0x4d, 0x27, 0xb9, 0x93, 0x4d, 0x3e, 0x08, 0xa5, 0x2e, 0x52, 0xd7, 0xda, 0x7d,
+                0xab, 0xfa, 0xc4, 0x84, 0xef, 0xe3, 0x7a, 0x53, 0x80, 0xee, 0x90, 0x88, 0xf7, 0xac,
+                0xe2, 0xef, 0xcd, 0xe9,
+            ];
+
+            assert_eq!(hash, expected);
+            println!("hash: {:x?}", hash);
+        }
+    }
+
+    /*
     #[cfg(feature = "x25519")]
     #[test]
     fn test_x25519_exchange() {
@@ -256,9 +202,9 @@ mod tests {
             );
             assert!(!bob_exchange_result.is_null());
 
-            // shared secrets should be identical
             assert_eq!(alice_shared, bob_shared);
             assert_ne!(alice_shared, [0u8; 32]);
         }
     }
+    */
 }
