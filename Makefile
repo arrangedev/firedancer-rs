@@ -1,3 +1,12 @@
+RED=\033[0;31m
+ORANGE_0=\033[38;5;166m
+ORANGE_1=\033[38;5;208m
+ORANGE_2=\033[38;5;214m
+ORANGE_3=\033[38;5;220m
+ORANGE_4=\033[38;5;226m
+
+NC=\033[0m
+
 .PHONY: help all build build-debug build-release build-fast tests unit-tests examples \
         check fmt lint clean install doc \
         build-bits test-bits build-math test-math build-log test-log build-net test-net \
@@ -7,7 +16,6 @@
 all: build test check
 
 help:
-	@echo "firedancer-rs"
 	@echo ""
 	@echo "BUILD:"
 	@echo "  build         - Build everything in fast mode"

@@ -1,316 +1,264 @@
-use fd_wksp::{WorkspaceBuilder, WorkspaceError};
+use fd_wksp::WorkspaceBuilder;
+use std::{fs, time::Instant};
 
-fn main() -> Result<(), WorkspaceError> {
-    println!("=== Firedancer Workspace (wksp) Usage Example ===\n");
-
-    // Create an anonymous workspace for testing
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wksp = WorkspaceBuilder::new()
-        .name("test-workspace")
+        .name("workspace")
         .page_size(4096)
-        .page_count(256) // 1MB total
+        .page_count(512)
         .cpu_index(0)
-        .seed(42)
+        .seed(12345)
+        .part_max(200)
         .build_anonymous()?;
 
-    println!("Created workspace:");
-    println!("  Name: {}", wksp.name());
-    println!("  Seed: {}", wksp.seed());
-    println!("  Part Max: {}", wksp.part_max());
-    println!("  Data Max: {} bytes", wksp.data_max());
-    println!();
+    println!("  name: {}", wksp.name());
+    println!("  seed: {}", wksp.seed());
+    println!("  part_max: {}", wksp.part_max());
+    println!("  data_max: {} MB", wksp.data_max() / (1024 * 1024));
 
-    // Basic allocation
-    println!("=== Basic Allocation ===");
-    let mut allocation1 = wksp.allocate(1024, 64, 1)?;
-    println!("Allocated 1024 bytes with 64-byte alignment, tag=1");
-    println!(
-        "  Global address: {}",
-        allocation1.global_address().as_u64()
-    );
-    println!("  Local pointer: {:p}", allocation1.as_ptr());
-    println!("  Size: {} bytes", allocation1.size());
-    println!("  Tag: {}", allocation1.tag());
-    println!();
+    let mut allocations = Vec::new();
 
-    // Write some data
-    {
-        let data = allocation1.as_mut_slice();
-        data[0..12].copy_from_slice(b"Hello, wksp!");
+    for i in 1..=10 {
+        let size = 1024 * i;
+        let align = if i % 2 == 0 { 64 } else { 32 };
+        let tag = ((i % 3) + 1) as u64;
+
+        let mut alloc = wksp.allocate(size, align, tag)?;
+
+        let data = alloc.as_mut_slice();
+        for j in 0..data.len() {
+            data[j] = ((i * 37 + j) % 256) as u8;
+        }
+
         println!(
-            "Wrote data: {:?}",
-            std::str::from_utf8(&data[0..12]).unwrap()
+            "  alloc-{}: size={}, align={}, tag={}, gaddr={}",
+            i,
+            size,
+            align,
+            tag,
+            alloc.global_address().as_u64()
+        );
+
+        allocations.push(alloc);
+    }
+    println!();
+
+    for tag in 1..=3 {
+        let tag_allocs = wksp.query_by_tag(&[tag])?;
+        let total_size: u64 = tag_allocs
+            .iter()
+            .map(|info| info.gaddr_hi.as_u64() - info.gaddr_lo.as_u64())
+            .sum();
+        println!(
+            "tag-{}: allocs={}, bytes={}",
+            tag,
+            tag_allocs.len(),
+            total_size
         );
     }
-
-    // Address conversion
-    println!("=== Address Conversion ===");
-    let gaddr = allocation1.global_address();
-    let laddr = wksp.gaddr_to_laddr(gaddr)?;
-    let gaddr_back = wksp.laddr_to_gaddr(laddr)?;
-    println!(
-        "Global -> Local -> Global: {} -> {:p} -> {}",
-        gaddr.as_u64(),
-        laddr,
-        gaddr_back.as_u64()
-    );
     println!();
 
-    // Multiple allocations with different tags
-    println!("=== Multiple Allocations ===");
-    let allocation2 = wksp.allocate(512, 32, 2)?;
-    let allocation3 = wksp.allocate(256, 16, 1)?; // Same tag as allocation1
-    let allocation4 = wksp.allocate(128, 8, 3)?;
-
-    println!("Allocated additional blocks:");
-    println!(
-        "  Block 2: {} bytes, tag={}",
-        allocation2.size(),
-        allocation2.tag()
-    );
-    println!(
-        "  Block 3: {} bytes, tag={}",
-        allocation3.size(),
-        allocation3.tag()
-    );
-    println!(
-        "  Block 4: {} bytes, tag={}",
-        allocation4.size(),
-        allocation4.tag()
-    );
-    println!();
-
-    // Query allocations by tag
-    println!("=== Tag Queries ===");
-    let tag1_allocs = wksp.query_by_tag(&[1])?;
-    println!("Allocations with tag 1: {}", tag1_allocs.len());
-    for (i, info) in tag1_allocs.iter().enumerate() {
-        println!(
-            "  #{}: gaddr range [{}, {}), tag={}",
-            i + 1,
-            info.gaddr_lo.as_u64(),
-            info.gaddr_hi.as_u64(),
-            info.tag
-        );
+    match wksp.verify() {
+        Ok(()) => println!("wksp verified"),
+        Err(e) => println!("wksp verification failed: {}", e),
     }
-
-    let tag2_allocs = wksp.query_by_tag(&[2])?;
-    println!("Allocations with tag 2: {}", tag2_allocs.len());
-
-    let all_allocs = wksp.query_by_tag(&[1, 2, 3])?;
-    println!("Total allocations with tags 1,2,3: {}", all_allocs.len());
     println!();
 
-    // Workspace usage statistics
-    println!("=== Usage Statistics ===");
+    let checkpoint_path = "/tmp/wksp_checkpoint.bin";
+    let _ = fs::remove_file(checkpoint_path);
+
+    match wksp.checkpoint(checkpoint_path, 0o644, 0, Some("checkpoint")) {
+        Ok(()) => {
+            println!("checkpt_path={}", checkpoint_path);
+
+            if let Ok(metadata) = fs::metadata(checkpoint_path) {
+                println!("checkpt_size={}", metadata.len());
+            }
+        }
+        Err(e) => println!("checkpt failed: {}", e),
+    }
+    println!();
+
+    let old_seed = wksp.seed();
+    match wksp.rebuild(54321) {
+        Ok(()) => {
+            println!("wksp rebuilt");
+            println!("  old_seed={}", old_seed);
+            println!("  new_seed={}", wksp.seed());
+        }
+        Err(e) => println!("rebuild failed: {}", e),
+    }
+    println!();
+
+    let large_size = 128 * 1024;
+    match wksp.allocate(large_size, 4096, 100) {
+        Ok(mut large_alloc) => {
+            println!("large_alloc={} KB", large_size / 1024);
+            println!("  gaddr={}", large_alloc.global_address().as_u64());
+            println!("  align={} bytes", large_alloc.as_ptr() as usize % 4096);
+
+            {
+                let data = large_alloc.as_mut_slice();
+                for (i, byte) in data.iter_mut().enumerate() {
+                    *byte = (i % 251) as u8;
+                }
+
+                println!("  first_8_bytes={:02X?}", &data[0..8]);
+                println!("  last_8_bytes={:02X?}", &data[data.len() - 8..]);
+            }
+        }
+        Err(e) => println!("large allocation failed: {}", e),
+    }
+    println!();
+
     let usage = wksp.usage(&[]);
-    println!("Overall usage:");
+
+    println!("utilization:");
     println!(
-        "  Total partitions: {} / {}",
-        usage.total_cnt, usage.total_max
-    );
-    println!("  Total size: {} bytes", usage.total_sz);
-    println!(
-        "  Used: {} partitions, {} bytes",
-        usage.used_cnt, usage.used_sz
+        "  partitions={}/{} ({:.1}%)",
+        usage.used_cnt,
+        usage.total_max,
+        100.0 * usage.used_cnt as f64 / usage.total_max as f64
     );
     println!(
-        "  Free: {} partitions, {} bytes",
-        usage.free_cnt, usage.free_sz
+        "  memory={}/{} bytes ({:.1}%)",
+        usage.used_sz,
+        usage.total_sz,
+        100.0 * usage.used_sz as f64 / usage.total_sz as f64
     );
 
-    let tag1_usage = wksp.usage(&[1]);
-    println!("Tag 1 usage:");
-    println!(
-        "  Used: {} partitions, {} bytes",
-        tag1_usage.used_cnt, tag1_usage.used_sz
-    );
-    println!();
+    // Fragmentation analysis
+    let avg_used_size = if usage.used_cnt > 0 {
+        usage.used_sz / usage.used_cnt
+    } else {
+        0
+    };
+    let avg_free_size = if usage.free_cnt > 0 {
+        usage.free_sz / usage.free_cnt
+    } else {
+        0
+    };
 
-    // Allocation manipulation
-    println!("=== Allocation Manipulation ===");
-    {
-        let mut alloc = allocation2;
-        println!(
-            "Before clear: first 4 bytes = {:?}",
-            &alloc.as_slice()[0..4]
-        );
+    println!("  avg_used_partition={} bytes", avg_used_size);
+    println!("  avg_free_partition={} bytes", avg_free_size);
 
-        // Fill with pattern
-        alloc.fill(0xAB);
-        println!(
-            "After fill(0xAB): first 4 bytes = {:02X?}",
-            &alloc.as_slice()[0..4]
-        );
+    let mut stress_allocations = Vec::new();
+    let mut allocation_count = 0;
 
-        // Clear to zeros
-        alloc.clear();
-        println!(
-            "After clear: first 4 bytes = {:02X?}",
-            &alloc.as_slice()[0..4]
-        );
+    loop {
+        match wksp.allocate(64, 8, 200) {
+            Ok(alloc) => {
+                stress_allocations.push(alloc);
+                allocation_count += 1;
+            }
+            Err(_) => break,
+        }
+
+        if allocation_count > 1000 {
+            break;
+        }
     }
-    println!();
 
-    // Free by tag
-    println!("=== Free by Tag ===");
+    let final_usage = wksp.usage(&[]);
+    wksp.free_by_tag(&[200]);
+
+    println!("allocs_before_limit={}", allocation_count);
     println!(
-        "Before free: {} total allocations",
-        wksp.query_by_tag(&[1, 2, 3])?.len()
+        "final_part_usage={}/{}",
+        final_usage.used_cnt, final_usage.total_max
+    );
+    println!(
+        "pre_cleanup={}",
+        wksp.query_by_tag(&[1, 2, 3, 100, 200])?.len()
     );
 
-    wksp.free_by_tag(&[2]); // Free allocation with tag 2
-
-    let remaining = wksp.query_by_tag(&[1, 2, 3])?;
     println!(
-        "After freeing tag 2: {} remaining allocations",
-        remaining.len()
+        "post_free_tag_200={}",
+        wksp.query_by_tag(&[1, 2, 3, 100, 200])?.len()
     );
+
+    wksp.free_by_tag(&[1, 3]);
+    let remaining = wksp.query_by_tag(&[1, 2, 3, 100])?;
+    println!("post_free_tags_1_3={}", remaining.len());
+
     for info in &remaining {
         println!(
-            "  Remaining: gaddr={}, tag={}",
+            "  remaining_gaddr={}, tag={}",
             info.gaddr_lo.as_u64(),
             info.tag
         );
     }
     println!();
 
-    // Allocation with detailed range
-    println!("=== Allocation with Range Info ===");
-    let (allocation5, lo, hi) = wksp.allocate_at_least(2048, 128, 5)?;
-    println!("Allocated at least 2048 bytes:");
-    println!(
-        "  Returned address: {}",
-        allocation5.global_address().as_u64()
-    );
-    println!("  Actual range: [{}, {})", lo.as_u64(), hi.as_u64());
-    println!("  Actual size: {} bytes", hi.as_u64() - lo.as_u64());
-    println!();
+    if fs::metadata(checkpoint_path).is_ok() {
+        wksp.reset(99999);
+        println!("used_partitions_after_reset={}", wksp.usage(&[]).used_cnt);
 
-    // Manual memory management
-    println!("=== Manual Memory Management ===");
-    let raw_gaddr = allocation5.into_raw(); // Take ownership, prevent auto-cleanup
-    println!("Converted allocation to raw gaddr: {}", raw_gaddr.as_u64());
+        match wksp.restore(checkpoint_path, 67890) {
+            Ok(()) => {
+                let restored_usage = wksp.usage(&[]);
+                let restored_allocs = wksp.query_by_tag(&[1, 2, 3])?;
 
-    // Manually free it
-    wksp.free_gaddr(raw_gaddr);
-    println!("Manually freed allocation");
+                println!("  new_seed={}", wksp.seed());
+                println!("  restored_partitions={}", restored_usage.used_cnt);
+                println!("  restored_tagged_allocs={}", restored_allocs.len());
 
-    // Verify it's gone
-    let tag5_allocs = wksp.query_by_tag(&[5])?;
-    println!("Tag 5 allocations after manual free: {}", tag5_allocs.len());
-    println!();
+                // Verify data integrity in restored allocations
+                for info in restored_allocs.iter().take(3) {
+                    if let Ok(laddr) = wksp.gaddr_to_laddr(info.gaddr_lo) {
+                        let size = (info.gaddr_hi.as_u64() - info.gaddr_lo.as_u64()) as usize;
+                        if size >= 8 {
+                            let data = unsafe { std::slice::from_raw_parts(laddr, 8) };
+                            println!(
+                                "    gaddr {} first 8 bytes: {:02X?}",
+                                info.gaddr_lo.as_u64(),
+                                data
+                            );
+                        }
+                    }
+                }
+            }
+            Err(e) => println!("restore failed: {}", e),
+        }
 
-    // Workspace verification
-    println!("=== Workspace Verification ===");
-    match wksp.verify() {
-        Ok(()) => println!("Workspace verification: PASSED"),
-        Err(e) => println!("Workspace verification: FAILED - {}", e),
-    }
-    println!();
-
-    // Reset demonstration
-    println!("=== Workspace Reset ===");
-    let before_reset = wksp.usage(&[]);
-    println!(
-        "Before reset: {} used partitions, {} used bytes",
-        before_reset.used_cnt, before_reset.used_sz
-    );
-
-    wksp.reset(123); // Reset with new seed
-
-    let after_reset = wksp.usage(&[]);
-    println!(
-        "After reset: {} used partitions, {} used bytes",
-        after_reset.used_cnt, after_reset.used_sz
-    );
-    println!("New seed: {}", wksp.seed());
-    println!();
-
-    // Multi-NUMA example (would require appropriate system setup in real usage)
-    println!("=== Multi-NUMA Example ===");
-    let multi_numa_wksp = WorkspaceBuilder::new()
-        .name("multi-numa-test")
-        .page_size(4096)
-        .multi_numa(vec![64, 64], vec![0, 1]) // 64 pages on CPU 0 and 1
-        .seed(456)
-        .build_anonymous()?;
-
-    println!("Created multi-NUMA workspace: {}", multi_numa_wksp.name());
-    println!("  Seed: {}", multi_numa_wksp.seed());
-    println!("  Data Max: {} bytes", multi_numa_wksp.data_max());
-
-    // Allocate from the multi-NUMA workspace
-    let numa_alloc = multi_numa_wksp.allocate(4096, 4096, 100)?;
-    println!(
-        "  Allocated 4KB page: gaddr={}",
-        numa_alloc.global_address().as_u64()
-    );
-    println!();
-
-    // Error handling examples
-    println!("=== Error Handling ===");
-
-    // Invalid size
-    match wksp.allocate(0, 64, 1) {
-        Err(e) => println!("Expected error for zero size: {}", e),
-        Ok(_) => println!("Unexpected success for zero size"),
+        let _ = fs::remove_file(checkpoint_path);
+        println!();
     }
 
-    // Invalid tag
-    match wksp.allocate(1024, 64, 0) {
-        Err(e) => println!("Expected error for zero tag: {}", e),
-        Ok(_) => println!("Unexpected success for zero tag"),
+    let start = Instant::now();
+    let mut perf_allocs = Vec::new();
+
+    for _i in 0..100 {
+        if let Ok(alloc) = wksp.allocate(1024, 32, 300) {
+            perf_allocs.push(alloc);
+        }
     }
 
-    // Invalid alignment
-    match wksp.allocate(1024, 63, 1) {
-        Err(e) => println!("Expected error for non-power-of-2 alignment: {}", e),
-        Ok(_) => println!("Unexpected success for invalid alignment"),
-    }
+    let alloc_time = start.elapsed();
+    println!(
+        "100_allocs_took={:?} ({:.2} μs/alloc)",
+        alloc_time,
+        alloc_time.as_micros() as f64 / 100.0
+    );
+
+    let start = Instant::now();
+    wksp.free_by_tag(&[300]);
+    let free_time = start.elapsed();
+    println!("bulk free took: {:?}", free_time);
     println!();
 
-    // Utility functions
-    println!("=== Utility Functions ===");
-    let align = fd_wksp::utils::align();
-    println!("Workspace alignment requirement: {} bytes", align);
-
-    let footprint = fd_wksp::utils::footprint(1000, 1024 * 1024);
+    let final_state = wksp.usage(&[]);
     println!(
-        "Footprint for 1000 partitions, 1MB data: {} bytes",
-        footprint
-    );
-
-    let part_max_est = fd_wksp::utils::part_max_est(16 * 1024 * 1024, 64 * 1024);
-    println!(
-        "Estimated max partitions for 16MB footprint, 64KB typical: {}",
-        part_max_est
-    );
-
-    let data_max_est = fd_wksp::utils::data_max_est(16 * 1024 * 1024, part_max_est);
-    println!(
-        "Estimated max data for 16MB footprint, {} partitions: {} bytes",
-        part_max_est, data_max_est
-    );
-    println!();
-
-    println!("=== Final Statistics ===");
-    let final_usage = wksp.usage(&[]);
-    println!("Final workspace usage:");
-    println!(
-        "  Total: {} partitions, {} bytes",
-        final_usage.total_cnt, final_usage.total_sz
+        "  partitions={}/{}",
+        final_state.used_cnt, final_state.total_max
     );
     println!(
-        "  Used: {} partitions, {} bytes",
-        final_usage.used_cnt, final_usage.used_sz
+        "  memory={} ({:.1}% of {} bytes)",
+        final_state.used_sz,
+        100.0 * final_state.used_sz as f64 / final_state.total_sz as f64,
+        final_state.total_sz
     );
-    println!(
-        "  Free: {} partitions, {} bytes",
-        final_usage.free_cnt, final_usage.free_sz
-    );
+    println!("  owner={}", wksp.owner());
 
-    println!("\n=== Example Completed Successfully! ===");
-
-    // Workspaces are automatically cleaned up when dropped
     Ok(())
 }

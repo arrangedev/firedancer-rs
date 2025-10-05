@@ -67,23 +67,14 @@ use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonError {
-    /// JSON parsing failed
     ParseError(String),
-    /// Invalid JSON structure
     InvalidStructure(String),
-    /// Memory allocation failed
     MemoryError,
-    /// Invalid UTF-8 sequence
     InvalidUtf8,
-    /// Key not found in object
     KeyNotFound(String),
-    /// Index out of bounds in array
     IndexOutOfBounds(usize),
-    /// Type mismatch when accessing value
     TypeMismatch(String),
-    /// Invalid input parameters
     InvalidInput(String),
-    /// JSON generation failed
     GenerationError(String),
 }
 

@@ -5,6 +5,10 @@ edition.workspace = true
 build = "build.rs"
 links = "fded25519"
 
+[features]
+default = []
+base58 = []
+
 [dependencies]
 
 [build-dependencies]

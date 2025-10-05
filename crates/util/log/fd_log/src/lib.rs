@@ -197,31 +197,31 @@ impl SystemLogger {
 
     pub fn boot_custom(config: LogConfig) -> Result<(), LogError> {
         let app_cstr = match &config.app {
-            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError(s.clone()))?),
+            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError)?),
             None => None,
         };
         let thread_cstr = match &config.thread {
-            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError(s.clone()))?),
+            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError)?),
             None => None,
         };
         let host_cstr = match &config.host {
-            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError(s.clone()))?),
+            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError)?),
             None => None,
         };
         let cpu_cstr = match &config.cpu {
-            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError(s.clone()))?),
+            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError)?),
             None => None,
         };
         let group_cstr = match &config.group {
-            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError(s.clone()))?),
+            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError)?),
             None => None,
         };
         let user_cstr = match &config.user {
-            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError(s.clone()))?),
+            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError)?),
             None => None,
         };
         let log_path_cstr = match &config.log_path {
-            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError(s.clone()))?),
+            Some(s) => Some(CString::new(s.as_str()).map_err(|_| LogError::NulError)?),
             None => None,
         };
 
@@ -467,9 +467,7 @@ impl SystemLogBuilder {
     pub fn try_init(self) -> Result<(), LogError> {
         match self.init() {
             Ok(()) => Ok(()),
-            Err(LogError::InitializationFailed(msg)) if msg.contains("already initialized") => {
-                Ok(())
-            }
+            Err(LogError::InitializationFailed) => Ok(()),
             Err(e) => Err(e),
         }
     }
@@ -477,19 +475,19 @@ impl SystemLogBuilder {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LogError {
-    InvalidPath(String),
+    InvalidPath,
     InvalidFd(i32),
-    NulError(String),
-    InitializationFailed(String),
+    NulError,
+    InitializationFailed,
 }
 
 impl std::fmt::Display for LogError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LogError::InvalidPath(path) => write!(f, "Invalid log path: {}", path),
+            LogError::InvalidPath => write!(f, "Invalid log path"),
             LogError::InvalidFd(fd) => write!(f, "Invalid file descriptor: {}", fd),
-            LogError::NulError(msg) => write!(f, "String contains null byte: {}", msg),
-            LogError::InitializationFailed(msg) => write!(f, "Log initialization failed: {}", msg),
+            LogError::NulError => write!(f, "String contains null byte"),
+            LogError::InitializationFailed => write!(f, "Log initialization failed"),
         }
     }
 }
@@ -1036,9 +1034,7 @@ mod tests {
         info!("Flushed to file './tachyon-fd-log.log'");
     }
 
-    #[test]
-    fn test_hexdump() {}
-
+    #[ignore]
     #[test_case(LogLevel::Error, "ERROR! SOMETHING HAPPENED"; "test_error")]
     #[test_case(LogLevel::Critical, "CRITICAL! SOMETHING IS SERIOUSLY WRONG"; "test_critical")]
     #[test_case(LogLevel::Alert, "RED ALERT! SOMETHING IS CRITICALLY WRONG"; "test_alert")]

@@ -1,18 +1,4 @@
-//! Safe Rust API for Firedancer tile (task dispatch) system
-//!
-//! This crate provides safe abstractions over the raw FFI bindings in `fd_tile_sys`.
-//! The tile system enables fast dispatching of tasks within a thread group, allowing
-//! parallel execution across multiple worker threads (tiles) with proper synchronization.
-//!
-//! ## Features
-//!
-//! - **Task Dispatch**: Execute tasks on specific tiles within a thread group
-//! - **Thread Safety**: Safe abstractions over the underlying C++ threading implementation
-//! - **Stack Management**: Monitor and analyze tile stack usage
-//! - **CPU Affinity**: Query CPU assignments for tiles
-//! - **Execution Control**: Start, monitor, and synchronize task execution
-//!
-//! ## Architecture
+//! Safe API for `fd_tile_sys`
 //!
 //! The tile system organizes execution into:
 //! - **Thread Group**: A collection of tiles sharing the same address space
@@ -22,99 +8,58 @@
 //!
 //! ## Platform Support
 //!
-//! - **Linux**: Full multi-tile support with real threading and task dispatch
-//! - **macOS/Other**: Single-tile mode with limited task dispatch capabilities
-//!   (uses no-threads implementation for compatibility)
+//! - **Linux**: Everything
+//! - **macOS/Other**: Single-tile mode
 //!
 //! ## Usage Patterns
 //!
-//! The tile system is designed for high-performance parallel execution where:
+//! `tile` is intended forparallel execution where:
 //! - Tasks need to be distributed across multiple CPU cores
 //! - NUMA-aware scheduling is important
 //! - Low-latency task dispatch is critical
 //! - Stack usage monitoring is needed for debugging
-//!
-//! ## Example
-//!
-//! ```rust,no_run
-//! use fd_tile::{Tile, TaskResult};
-//!
-//! // Define a task function
-//! extern "C" fn compute_task(argc: i32, argv: *mut *mut std::os::raw::c_char) -> i32 {
-//!     // Perform computation
-//!     println!("Computing on tile {}", fd_tile::current_tile_idx());
-//!     0 // Success
-//! }
-//!
-//! // Get tile information
-//! let tile_info = Tile::current_info();
-//! println!("Running on tile {} of {}", tile_info.idx, tile_info.count);
-//!
-//! // Dispatch task to another tile (if available)
-//! if tile_info.count > 1 && tile_info.idx < tile_info.count - 1 {
-//!     let target_tile = tile_info.idx + 1;
-//!     
-//!     match Tile::execute_task(target_tile, compute_task, &[]) {
-//!         Ok(execution) => {
-//!             // wait for completion
-//!             match execution.wait() {
-//!                 TaskResult::Success(code) => println!("Task completed: {}", code),
-//!                 TaskResult::Error(msg) => println!("Task failed: {}", msg),
-//!             }
-//!         }
-//!         Err(e) => println!("Failed to dispatch: {:?}", e),
-//!     }
-//! }
-//! ```
 
+use core::marker::PhantomData;
+use core::ptr::NonNull;
 use fd_tile_sys::{self as sys, ulong};
-use std::ffi::{CStr, CString};
-use std::marker::PhantomData;
-use std::ptr::NonNull;
+use std::ffi::CString;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TileError {
-    /// Invalid tile index
     InvalidTileIndex(ulong),
-    /// Task dispatch failed
     DispatchFailed,
-    /// Invalid task function
     InvalidTask,
-    /// Invalid arguments
-    InvalidArguments(String),
-    /// Execution failed
-    ExecutionFailed(String),
-    /// Tile system not initialized
+    InvalidArguments,
+    ExecutionFailed,
     NotInitialized,
-    /// Cannot dispatch to self
     CannotDispatchToSelf,
-    /// Cannot dispatch to tile 0
     CannotDispatchToTileZero,
-    /// Tile is busy
+    FailedOnWait,
     TileBusy,
-    /// Thread group mismatch
     ThreadGroupMismatch,
 }
 
-impl std::fmt::Display for TileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for TileError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             TileError::InvalidTileIndex(idx) => write!(f, "Invalid tile index: {}", idx),
             TileError::DispatchFailed => write!(f, "Task dispatch failed"),
             TileError::InvalidTask => write!(f, "Invalid task function"),
-            TileError::InvalidArguments(msg) => write!(f, "Invalid arguments: {}", msg),
-            TileError::ExecutionFailed(msg) => write!(f, "Execution failed: {}", msg),
+            TileError::InvalidArguments => write!(f, "Invalid arguments:"),
+            TileError::ExecutionFailed => write!(f, "Execution failed"),
             TileError::NotInitialized => write!(f, "Tile system not initialized"),
             TileError::CannotDispatchToSelf => write!(f, "Cannot dispatch task to self"),
             TileError::CannotDispatchToTileZero => write!(f, "Cannot dispatch task to tile 0"),
+            TileError::FailedOnWait => write!(f, "Failed on wait"),
             TileError::TileBusy => write!(f, "Target tile is busy"),
             TileError::ThreadGroupMismatch => write!(f, "Tile not in same thread group"),
         }
     }
 }
 
-impl std::error::Error for TileError {}
+impl core::error::Error for TileError {}
 
+#[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TileInfo {
     /// First tile ID in the thread group
@@ -129,6 +74,7 @@ pub struct TileInfo {
     pub count: ulong,
 }
 
+#[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StackInfo {
     /// Stack start address (lower address)
@@ -145,14 +91,11 @@ pub struct StackInfo {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TaskResult {
-    /// Task completed successfully with return code
     Success(i32),
-    /// Task failed with error message
-    Error(String),
+    Error(TileError),
 }
 
-pub type TaskFunction =
-    unsafe extern "C" fn(argc: i32, argv: *mut *mut std::os::raw::c_char) -> i32;
+pub type TaskFunction = unsafe extern "C" fn(argc: i32, argv: *mut *mut core::ffi::c_char) -> i32;
 
 pub struct TaskExecution {
     handle: NonNull<sys::fd_tile_exec_t>,
@@ -198,24 +141,20 @@ impl TaskExecution {
     pub fn wait(self) -> TaskResult {
         let mut return_code = 0;
         let error_msg = unsafe { sys::fd_tile_exec_delete(self.handle.as_ptr(), &mut return_code) };
-
-        // no double-free
-        std::mem::forget(self);
+        core::mem::forget(self);
 
         if error_msg.is_null() {
             TaskResult::Success(return_code)
         } else {
-            let error_str = unsafe { CStr::from_ptr(error_msg) };
-            TaskResult::Error(error_str.to_string_lossy().into_owned())
+            TaskResult::Error(TileError::FailedOnWait)
         }
     }
 
-    /// try to get the result without blocking (returns `None` if still running)
     pub fn try_result(self) -> Option<TaskResult> {
         if self.is_done() {
             Some(self.wait())
         } else {
-            std::mem::forget(self); // don't drop yet
+            core::mem::forget(self);
             None
         }
     }
@@ -224,7 +163,7 @@ impl TaskExecution {
 impl Drop for TaskExecution {
     fn drop(&mut self) {
         unsafe {
-            sys::fd_tile_exec_delete(self.handle.as_ptr(), std::ptr::null_mut());
+            sys::fd_tile_exec_delete(self.handle.as_ptr(), core::ptr::null_mut());
         }
     }
 }
@@ -293,23 +232,21 @@ impl Tile {
             return Err(TileError::CannotDispatchToTileZero);
         }
 
-        let mut c_args: Vec<*mut std::os::raw::c_char> = Vec::new();
+        let mut c_args: Vec<*mut core::ffi::c_char> = Vec::new();
         let mut c_strings = Vec::new();
 
-        let task_name = CString::new("task")
-            .map_err(|_| TileError::InvalidArguments("Failed to create task name".to_string()))?;
+        let task_name = CString::new("task").map_err(|_| TileError::InvalidArguments)?;
         c_strings.push(task_name);
 
         for arg in args {
-            let c_arg = CString::new(*arg)
-                .map_err(|_| TileError::InvalidArguments("Invalid argument string".to_string()))?;
+            let c_arg = CString::new(*arg).map_err(|_| TileError::InvalidArguments)?;
             c_strings.push(c_arg);
         }
 
         for c_string in &c_strings {
-            c_args.push(c_string.as_ptr() as *mut std::os::raw::c_char);
+            c_args.push(c_string.as_ptr() as *mut core::ffi::c_char);
         }
-        c_args.push(std::ptr::null_mut());
+        c_args.push(core::ptr::null_mut());
 
         let handle = unsafe {
             sys::fd_tile_exec_new(
@@ -433,7 +370,7 @@ mod tests {
         }
 
         let _task: TaskFunction = test_task;
-        let result = test_task(0, std::ptr::null_mut());
+        let result = test_task(0, core::ptr::null_mut());
         assert_eq!(result, 42);
     }
 

@@ -1,30 +1,20 @@
-//! Safe Rust bindings for Firedancer checkpoint utility
+//! Wrapper for `fd_checkpt_sys`
 //!
-//! This crate provides a safe, idiomatic Rust API for the Firedancer checkpoint and restore system.
-//! It wraps the unsafe FFI bindings provided by `fd_checkpt_sys`.
-//!
-//! The checkpoint system enables fast parallel compressed checkpoint and restore operations
-//! with support for both raw and LZ4-compressed frames.
+//! This provided a safe API for the checkpoint system, which enables fast parallel compressed
+//! checkpoint and restore operations. Both raw and lz4-compressed frames are supported.
 
 use core::ffi::CStr;
 use std::{fs::File, os::fd::IntoRawFd};
 
-/// Result type for checkpoint operations
 pub type CheckptResult<T> = Result<T, CheckptError>;
 
-/// Errors that can occur during checkpoint operations
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CheckptError {
-    /// Invalid input arguments
-    InvalidArgs(String),
-    /// Unsupported operation on this target
-    Unsupported(String),
-    /// I/O error occurred
-    IoError(String),
-    /// Compression/decompression error
-    CompressionError(String),
-    /// Unknown error
-    Unknown(String),
+    InvalidArgs(&'static str),
+    Unsupported(&'static str),
+    IoError(&'static str),
+    CompressionError(&'static str),
+    Unknown(&'static str),
 }
 
 impl core::fmt::Display for CheckptError {
@@ -45,7 +35,7 @@ impl From<i32> for CheckptError {
     fn from(err_code: i32) -> Self {
         let msg = unsafe {
             let c_str = fd_checkpt_sys::fd_checkpt_strerror(err_code);
-            CStr::from_ptr(c_str).to_string_lossy().into_owned()
+            CStr::from_ptr(c_str).to_str().unwrap()
         };
 
         match err_code {
@@ -58,17 +48,13 @@ impl From<i32> for CheckptError {
     }
 }
 
-/// Frame styles for checkpoint compression
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameStyle {
-    /// Uncompressed frame
     Raw = fd_checkpt_sys::FD_CHECKPT_FRAME_STYLE_RAW as isize,
-    /// LZ4 compressed frame
     Lz4 = fd_checkpt_sys::FD_CHECKPT_FRAME_STYLE_LZ4 as isize,
 }
 
 impl FrameStyle {
-    /// Check if this frame style is supported on the current target
     pub fn is_supported(self) -> bool {
         unsafe { fd_checkpt_sys::fd_checkpt_frame_style_is_supported(self as i32) != 0 }
     }
@@ -80,22 +66,20 @@ impl Default for FrameStyle {
     }
 }
 
-/// A checkpoint handle for writing checkpoint data
-pub struct FdCheckpt {
+#[repr(C)]
+pub struct Checkpt {
     inner: Box<fd_checkpt_sys::fd_checkpt_private>,
     _write_buffer: Option<Vec<u8>>,
     _mmio_buffer: Option<Vec<u8>>,
 }
 
-impl FdCheckpt {
+impl Checkpt {
     pub fn new_stream(file: File, write_buffer_size: Option<usize>) -> CheckptResult<Self> {
         let wbuf_sz = write_buffer_size.unwrap_or(fd_checkpt_sys::FD_CHECKPT_WBUF_MIN as usize);
         if wbuf_sz < fd_checkpt_sys::FD_CHECKPT_WBUF_MIN as usize {
-            return Err(CheckptError::InvalidArgs(format!(
-                "Write buffer size {} is less than minimum {}",
-                wbuf_sz,
-                fd_checkpt_sys::FD_CHECKPT_WBUF_MIN
-            )));
+            return Err(CheckptError::InvalidArgs(
+                "Write buffer size is less than minimum",
+            ));
         }
 
         let mut write_buffer = vec![0u8; wbuf_sz];
@@ -113,21 +97,18 @@ impl FdCheckpt {
         };
 
         if checkpt_ptr.is_null() {
-            // If initialization failed, we need to close the file descriptor
             unsafe { libc::close(fd) };
-            return Err(CheckptError::InvalidArgs(
-                "Failed to initialize checkpoint".to_string(),
-            ));
+            return Err(CheckptError::InvalidArgs("Failed to initialize checkpoint"));
         }
 
-        Ok(FdCheckpt {
+        Ok(Checkpt {
             inner: checkpt_mem,
             _write_buffer: Some(write_buffer),
             _mmio_buffer: None,
         })
     }
 
-    /// Create a new checkpoint in memory-mapped I/O mode
+    #[inline]
     pub fn new_mmio(buffer_size: usize) -> CheckptResult<Self> {
         let mut mmio_buffer = vec![0u8; buffer_size];
         let mut checkpt_mem =
@@ -142,43 +123,38 @@ impl FdCheckpt {
         };
 
         if checkpt_ptr.is_null() {
-            return Err(CheckptError::InvalidArgs(
-                "Failed to initialize checkpoint".to_string(),
-            ));
+            return Err(CheckptError::InvalidArgs("Failed to initialize checkpoint"));
         }
 
-        Ok(FdCheckpt {
+        Ok(Checkpt {
             inner: checkpt_mem,
             _write_buffer: None,
             _mmio_buffer: Some(mmio_buffer),
         })
     }
 
-    /// Check if this checkpoint is in memory-mapped I/O mode
+    #[inline]
     pub fn is_mmio(&self) -> bool {
-        // Inline implementation: return checkpt->fd<0
+        // checkpt->fd<0
         self.inner.fd < 0
     }
 
-    /// Check if a frame can be opened
+    #[inline]
     pub fn can_open_frame(&self) -> bool {
-        // Inline implementation: return !checkpt->frame_style
+        //!checkpt->frame_style
         self.inner.frame_style == 0
     }
 
-    /// Check if currently in a frame
+    #[inline]
     pub fn in_frame(&self) -> bool {
-        // Inline implementation: return checkpt->frame_style>0
+        // checkpt->frame_style>0
         self.inner.frame_style > 0
     }
 
-    /// Open a new frame with the specified style
+    #[inline]
     pub fn open_frame(&mut self, style: FrameStyle) -> CheckptResult<u64> {
         if !style.is_supported() {
-            return Err(CheckptError::Unsupported(format!(
-                "{:?} frame style is not supported",
-                style
-            )));
+            return Err(CheckptError::Unsupported("Frame style is not supported"));
         }
 
         let mut offset = 0u64;
@@ -193,7 +169,7 @@ impl FdCheckpt {
         }
     }
 
-    /// Close the current frame
+    #[inline]
     pub fn close_frame(&mut self) -> CheckptResult<u64> {
         let mut offset = 0u64;
         let result =
@@ -206,14 +182,10 @@ impl FdCheckpt {
         }
     }
 
-    /// Checkpoint metadata (small buffers, copied immediately)
+    #[inline]
     pub fn checkpoint_meta(&mut self, data: &[u8]) -> CheckptResult<()> {
         if data.len() > fd_checkpt_sys::FD_CHECKPT_META_MAX as usize {
-            return Err(CheckptError::InvalidArgs(format!(
-                "Metadata size {} exceeds maximum {}",
-                data.len(),
-                fd_checkpt_sys::FD_CHECKPT_META_MAX
-            )));
+            return Err(CheckptError::InvalidArgs("Metadata size exceeds maximum"));
         }
 
         let result = unsafe {
@@ -231,7 +203,7 @@ impl FdCheckpt {
         }
     }
 
-    /// Checkpoint data (large buffers, must remain valid until frame is closed)
+    #[inline]
     pub fn checkpoint_data(&mut self, data: &[u8]) -> CheckptResult<()> {
         let result = unsafe {
             fd_checkpt_sys::fd_checkpt_data(
@@ -248,41 +220,38 @@ impl FdCheckpt {
         }
     }
 
-    /// Get the memory-mapped buffer (if in MMIO mode)
+    #[inline]
     pub fn mmio_buffer(&self) -> Option<&[u8]> {
         self._mmio_buffer.as_ref().map(|buf| buf.as_slice())
     }
 }
 
-impl Drop for FdCheckpt {
+impl Drop for Checkpt {
     fn drop(&mut self) {
         unsafe {
             let result = fd_checkpt_sys::fd_checkpt_fini(self.inner.as_mut());
             if result.is_null() {
-                // Log warning but can't panic in drop
-                eprintln!("Warning: Failed to properly finalize checkpoint");
+                // can't panic in drop
             }
         }
     }
 }
 
-/// A restore handle for reading checkpoint data
-pub struct FdRestore {
+#[repr(C)]
+pub struct Restore {
     inner: Box<fd_checkpt_sys::fd_restore_private>,
     _read_buffer: Option<Vec<u8>>,
     _mmio_buffer: Option<Vec<u8>>,
 }
 
-impl FdRestore {
-    /// Create a new restore in streaming mode
+impl Restore {
+    #[inline]
     pub fn new_stream(file: File, read_buffer_size: Option<usize>) -> CheckptResult<Self> {
         let rbuf_sz = read_buffer_size.unwrap_or(fd_checkpt_sys::FD_RESTORE_RBUF_MIN as usize);
         if rbuf_sz < fd_checkpt_sys::FD_RESTORE_RBUF_MIN as usize {
-            return Err(CheckptError::InvalidArgs(format!(
-                "Read buffer size {} is less than minimum {}",
-                rbuf_sz,
-                fd_checkpt_sys::FD_RESTORE_RBUF_MIN
-            )));
+            return Err(CheckptError::InvalidArgs(
+                "Read buffer size is less than minimum",
+            ));
         }
 
         let mut read_buffer = vec![0u8; rbuf_sz];
@@ -300,21 +269,18 @@ impl FdRestore {
         };
 
         if restore_ptr.is_null() {
-            // If initialization failed, we need to close the file descriptor
             unsafe { libc::close(fd) };
-            return Err(CheckptError::InvalidArgs(
-                "Failed to initialize restore".to_string(),
-            ));
+            return Err(CheckptError::InvalidArgs("Failed to initialize restore"));
         }
 
-        Ok(FdRestore {
+        Ok(Restore {
             inner: restore_mem,
             _read_buffer: Some(read_buffer),
             _mmio_buffer: None,
         })
     }
 
-    /// Create a new restore from memory-mapped data
+    #[inline]
     pub fn new_mmio(data: Vec<u8>) -> CheckptResult<Self> {
         let mut restore_mem =
             Box::new(unsafe { core::mem::zeroed::<fd_checkpt_sys::fd_restore_private>() });
@@ -328,43 +294,41 @@ impl FdRestore {
         };
 
         if restore_ptr.is_null() {
-            return Err(CheckptError::InvalidArgs(
-                "Failed to initialize restore".to_string(),
-            ));
+            return Err(CheckptError::InvalidArgs("Failed to initialize restore"));
         }
 
-        Ok(FdRestore {
+        Ok(Restore {
             inner: restore_mem,
             _read_buffer: None,
             _mmio_buffer: Some(data),
         })
     }
 
-    /// Check if this restore is in memory-mapped I/O mode
+    #[inline]
     pub fn is_mmio(&self) -> bool {
-        // Inline implementation: return restore->fd<0
+        // restore->fd<0
         self.inner.fd < 0
     }
 
-    /// Check if a frame can be opened
+    #[inline]
     pub fn can_open_frame(&self) -> bool {
-        // Inline implementation: return !restore->frame_style
+        // !restore->frame_style
         self.inner.frame_style == 0
     }
 
-    /// Check if currently in a frame
+    #[inline]
     pub fn in_frame(&self) -> bool {
-        // Inline implementation: return restore->frame_style>0
+        // restore->frame_style>0
         self.inner.frame_style > 0
     }
 
-    /// Get the size of the checkpoint data
+    #[inline]
     pub fn size(&self) -> u64 {
-        // Inline implementation: return restore->sz
+        // restore->sz
         self.inner.sz
     }
 
-    /// Seek to a specific offset in the checkpoint
+    #[inline]
     pub fn seek(&mut self, offset: u64) -> CheckptResult<()> {
         let result = unsafe { fd_checkpt_sys::fd_restore_seek(self.inner.as_mut(), offset) };
 
@@ -375,7 +339,7 @@ impl FdRestore {
         }
     }
 
-    /// Open a frame for restoration
+    #[inline]
     pub fn open_frame(&mut self, style: FrameStyle) -> CheckptResult<u64> {
         let mut offset = 0u64;
         let result = unsafe {
@@ -389,7 +353,7 @@ impl FdRestore {
         }
     }
 
-    /// Close the current frame
+    #[inline]
     pub fn close_frame(&mut self) -> CheckptResult<u64> {
         let mut offset = 0u64;
         let result =
@@ -402,14 +366,12 @@ impl FdRestore {
         }
     }
 
-    /// Restore metadata (small buffers, copied immediately)
+    #[inline]
     pub fn restore_meta(&mut self, buffer: &mut [u8]) -> CheckptResult<()> {
         if buffer.len() > fd_checkpt_sys::FD_RESTORE_META_MAX as usize {
-            return Err(CheckptError::InvalidArgs(format!(
-                "Metadata buffer size {} exceeds maximum {}",
-                buffer.len(),
-                fd_checkpt_sys::FD_RESTORE_META_MAX
-            )));
+            return Err(CheckptError::InvalidArgs(
+                "Metadata buffer size exceeds maximum",
+            ));
         }
 
         let result = unsafe {
@@ -427,7 +389,7 @@ impl FdRestore {
         }
     }
 
-    /// Restore data (large buffers, must remain valid until frame is closed)
+    #[inline]
     pub fn restore_data(&mut self, buffer: &mut [u8]) -> CheckptResult<()> {
         let result = unsafe {
             fd_checkpt_sys::fd_restore_data(
@@ -445,13 +407,12 @@ impl FdRestore {
     }
 }
 
-impl Drop for FdRestore {
+impl Drop for Restore {
     fn drop(&mut self) {
         unsafe {
             let result = fd_checkpt_sys::fd_restore_fini(self.inner.as_mut());
             if result.is_null() {
-                // Log warning but can't panic in drop
-                eprintln!("Warning: Failed to properly finalize restore");
+                // can't panic in drop
             }
         }
     }
@@ -487,8 +448,7 @@ mod tests {
 
     #[test]
     fn test_mmio_chkpt() {
-        let mut checkpt =
-            FdCheckpt::new_mmio(1024 * 1024).expect("Failed to create MMIO checkpoint");
+        let mut checkpt = Checkpt::new_mmio(1024 * 1024).expect("Failed to create MMIO checkpoint");
 
         assert!(checkpt.is_mmio());
         assert!(checkpt.can_open_frame());
@@ -515,8 +475,7 @@ mod tests {
 
     #[test]
     fn test_mmio_roundtrip() {
-        let mut checkpt =
-            FdCheckpt::new_mmio(1024 * 1024).expect("Failed to create MMIO checkpoint");
+        let mut checkpt = Checkpt::new_mmio(1024 * 1024).expect("Failed to create MMIO checkpoint");
 
         checkpt
             .open_frame(FrameStyle::Raw)
@@ -533,7 +492,7 @@ mod tests {
         let checkpoint_data = checkpoint_data[..end_offset as usize].to_vec();
 
         let mut restore =
-            FdRestore::new_mmio(checkpoint_data).expect("Failed to create MMIO restore");
+            Restore::new_mmio(checkpoint_data).expect("Failed to create MMIO restore");
 
         assert!(restore.is_mmio());
         assert!(restore.can_open_frame());
@@ -564,8 +523,7 @@ mod tests {
             return;
         }
 
-        let mut checkpt =
-            FdCheckpt::new_mmio(1024 * 1024).expect("Failed to create MMIO checkpoint");
+        let mut checkpt = Checkpt::new_mmio(1024 * 1024).expect("Failed to create MMIO checkpoint");
 
         checkpt.open_frame(style).expect("Failed to open frame");
 
@@ -580,7 +538,7 @@ mod tests {
         let checkpoint_data = checkpoint_data[..end_offset as usize].to_vec();
 
         let mut restore =
-            FdRestore::new_mmio(checkpoint_data).expect("Failed to create MMIO restore");
+            Restore::new_mmio(checkpoint_data).expect("Failed to create MMIO restore");
         restore
             .open_frame(style)
             .expect("Failed to open restore frame");
@@ -600,7 +558,7 @@ mod tests {
     #[test]
     fn test_large_chkpt() {
         let mut checkpt =
-            FdCheckpt::new_mmio(2 * 1024 * 1024).expect("Failed to create MMIO checkpoint");
+            Checkpt::new_mmio(2 * 1024 * 1024).expect("Failed to create MMIO checkpoint");
 
         checkpt
             .open_frame(FrameStyle::Raw)
@@ -617,7 +575,7 @@ mod tests {
         let checkpoint_data = checkpoint_data[..end_offset as usize].to_vec();
 
         let mut restore =
-            FdRestore::new_mmio(checkpoint_data).expect("Failed to create MMIO restore");
+            Restore::new_mmio(checkpoint_data).expect("Failed to create MMIO restore");
         restore
             .open_frame(FrameStyle::Raw)
             .expect("Failed to open restore frame");
@@ -635,9 +593,50 @@ mod tests {
     }
 
     #[test]
+    fn test_stream_chkpt() {
+        let mut checkpt = Checkpt::new_stream(
+            File::create("test_stream_chkpt.bin").expect("Failed to create file"),
+            Some(1024 * 1024),
+        )
+        .expect("Failed to create stream checkpoint");
+        checkpt
+            .open_frame(FrameStyle::Raw)
+            .expect("Failed to open frame");
+
+        let test_data = b"Test data for stream checkpoint";
+        checkpt
+            .checkpoint_meta(test_data)
+            .expect("Failed to checkpoint metadata");
+
+        let end_offset = checkpt.close_frame().expect("Failed to close frame");
+
+        println!("Checkpoint data size: {}", end_offset);
+
+        let mut restore = Restore::new_stream(
+            File::open("test_stream_chkpt.bin").expect("Failed to open file"),
+            Some(1024 * 1024),
+        )
+        .expect("Failed to create stream restore");
+
+        restore
+            .open_frame(FrameStyle::Raw)
+            .expect("Failed to open restore frame");
+
+        let mut restored_data = vec![0u8; test_data.len()];
+        restore
+            .restore_meta(&mut restored_data)
+            .expect("Failed to restore metadata");
+
+        assert_eq!(&restored_data, test_data);
+
+        restore
+            .close_frame()
+            .expect("Failed to close restore frame");
+    }
+
+    #[test]
     fn test_error_cases() {
-        let mut checkpt =
-            FdCheckpt::new_mmio(1024 * 1024).expect("Failed to create MMIO checkpoint");
+        let mut checkpt = Checkpt::new_mmio(1024 * 1024).expect("Failed to create MMIO checkpoint");
         checkpt
             .open_frame(FrameStyle::Raw)
             .expect("Failed to open frame");
@@ -649,7 +648,7 @@ mod tests {
 
         let checkpoint_data = vec![0u8; 1024];
         let mut restore =
-            FdRestore::new_mmio(checkpoint_data).expect("Failed to create MMIO restore");
+            Restore::new_mmio(checkpoint_data).expect("Failed to create MMIO restore");
 
         let too_large_buffer = vec![0u8; (fd_checkpt_sys::FD_RESTORE_META_MAX + 1) as usize];
         let result = restore.restore_meta(&mut too_large_buffer.clone());

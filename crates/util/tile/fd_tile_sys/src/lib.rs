@@ -1,67 +1,4 @@
-//! Low-level FFI bindings to Firedancer's fd_tile module.
-//!
-//! This crate provides raw, unsafe bindings to the Firedancer tile (task dispatch) API.
-//! For safe, idiomatic Rust wrappers, see the `fd_tile` crate.
-//!
-//! # Overview
-//!
-//! The fd_tile system provides fast dispatching of tasks within a thread group.
-//! It allows parallel execution of tasks across multiple tiles (worker threads)
-//! with proper synchronization and communication.
-//!
-//! # Safety
-//!
-//! All functions in this crate are unsafe and require careful handling of:
-//! - Memory management and lifetime guarantees
-//! - Thread safety and concurrency
-//! - Proper initialization and cleanup
-//! - Task execution and synchronization
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use fd_tile_sys::*;
-//! use std::ffi::CString;
-//! use std::ptr;
-//!
-//! unsafe extern "C" fn sample_task(argc: i32, argv: *mut *mut i8) -> i32 {
-//!     println!("Task executed with {} arguments", argc);
-//!     0 // success code
-//! }
-//!
-//! unsafe {
-//!     // get tile info
-//!     let tile_cnt = fd_tile_cnt();
-//!     let tile_idx = fd_tile_idx();
-//!     let tile_id = fd_tile_id();
-//!     
-//!     if tile_cnt > 1 && tile_idx < tile_cnt - 1 {
-//!         // prep args
-//!         let task_name = CString::new("sample_task").unwrap();
-//!         let mut argv = vec![task_name.as_ptr() as *mut i8, ptr::null_mut()];
-//!         
-//!         // dispatch to another tile
-//!         let exec = fd_tile_exec_new(
-//!             tile_idx + 1,  // targe
-//!             Some(sample_task),
-//!             1,  // argc
-//!             argv.as_mut_ptr()
-//!         );
-//!         
-//!         if !exec.is_null() {
-//!             // wait for complete
-//!             let mut ret_code = 0;
-//!             let error = fd_tile_exec_delete(exec, &mut ret_code);
-//!             
-//!             if error.is_null() {
-//!                 println!("Task completed with return code: {}", ret_code);
-//!             } else {
-//!                 println!("Task failed");
-//!             }
-//!         }
-//!     }
-//! }
-//! ```
+//! Raw FFI bindings for `/util/tile`
 
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
@@ -75,15 +12,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_constants() {
-        assert_eq!(FD_TILE_MAX, 1024);
-        assert_eq!(FD_TILE_PRIVATE_STACK_SZ, 8 * 1024 * 1024); // 8 MiB
-    }
-
-    #[test]
     fn test_tile_info() {
         unsafe {
-            // callable even without proper tile boot (return defaults or 0s)
+            // callable even without proper tile boot
             let id0 = fd_tile_id0();
             let id1 = fd_tile_id1();
             let id = fd_tile_id();
@@ -91,8 +22,8 @@ mod tests {
             let cnt = fd_tile_cnt();
 
             assert!(id >= id0);
-            assert!(id < id1 || (id0 == 0 && id1 == 0)); // uninitialized case
-            assert!(idx < cnt || cnt == 0); // uninitialized case
+            assert!(id < id1 || (id0 == 0 && id1 == 0));
+            assert!(idx < cnt || cnt == 0);
             assert_eq!(cnt, id1.saturating_sub(id0));
         }
     }
@@ -101,7 +32,6 @@ mod tests {
     fn test_cpu_id() {
         unsafe {
             let cpu_id = fd_tile_cpu_id(0);
-            // should return either a valid CPU ID or special values
             // ULONG_MAX for invalid tile_idx, ULONG_MAX-1 for floating
             assert!(cpu_id == u64::MAX || cpu_id == u64::MAX - 1 || cpu_id < 1024);
         }

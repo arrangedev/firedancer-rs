@@ -1,96 +1,33 @@
-//! Safe Rust API for Firedancer workspace (wksp) allocator
-//!
-//! This crate provides safe abstractions over the raw FFI bindings in `fd_wksp_sys`.
-//! The workspace system provides high-performance, persistent inter-process shared memory
-//! allocation with NUMA-awareness and TLB-efficiency for complex communication patterns.
-//!
-//! ## Features
-//!
-//! - **Inter-process shared memory**: Workspaces can be shared between multiple processes
-//! - **NUMA-aware allocation**: Supports allocation from specific NUMA nodes
-//! - **TLB-efficient**: Designed to minimize TLB usage with large page support
-//! - **Global addressing**: Consistent addressing across all processes
-//! - **Allocation tagging**: Support for tagging allocations for debugging and cleanup
-//! - **Checkpointing**: Save and restore workspace state
-//! - **Robust metadata**: Corruption detection and recovery capabilities
-//! - **Query and analysis**: Rich introspection APIs for debugging
-//!
-//! ## Usage Patterns
-//!
-//! Unlike scratch and spad allocators which are designed for temporary allocations,
-//! workspaces are intended for longer-lived allocations that may persist across
-//! application restarts and be shared between multiple processes.
-//!
-//! ## Example
-//!
-//! ```rust,no_run
-//! use fd_wksp::{Workspace, WorkspaceBuilder};
-//!
-//! // create an anonymous wksp
-//! let mut wksp = WorkspaceBuilder::new()
-//!     .name("test-workspace")
-//!     .page_size(4096)
-//!     .page_count(256)
-//!     .cpu_index(0)
-//!     .seed(42)
-//!     .build_anonymous()
-//!     .unwrap();
-//!
-//! // allocate with a tag
-//! let allocation = wksp.allocate(1024, 64, 1).unwrap();
-//! let data = allocation.as_mut_slice();
-//! data[0..4].copy_from_slice(b"test");
-//!
-//! // query allocations by tag
-//! let tagged_allocs = wksp.query_by_tag(&[1]).unwrap();
-//! assert_eq!(tagged_allocs.len(), 1);
-//!
-//! // free when finished
-//! wksp.free(allocation).unwrap();
-//! ```
+//! Safe API for `fd_wksp_sys`
 
+use core::ffi::CStr;
 use core::ptr::NonNull;
 use fd_wksp_sys::{self as sys, ulong};
-use std::ffi::{CStr, CString};
+
+use std::ffi::CString;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WorkspaceError {
-    /// Invalid input parameters
-    InvalidInput(String),
-    /// Operation failed due to system limitations
-    SystemFailure(String),
-    /// Workspace memory corruption detected
-    MemoryCorruption(String),
-    /// Allocation failed
+    InvalidInput(&'static str),
+    SystemFailure(&'static str),
+    MemoryCorruption(&'static str),
     AllocationFailed,
-    /// Invalid alignment (must be power of 2)
     InvalidAlignment,
-    /// Size is zero or too large
     InvalidSize,
-    /// Insufficient workspace space
     InsufficientSpace,
-    /// Invalid workspace handle
     InvalidWorkspace,
-    /// Invalid global address
     InvalidGlobalAddress,
-    /// Invalid local address
     InvalidLocalAddress,
-    /// Workspace creation failed
     CreationFailed,
-    /// Workspace join failed
     JoinFailed,
-    /// Workspace operation failed
-    OperationFailed(String),
-    /// Invalid tag value (must be positive)
+    OperationFailed,
     InvalidTag,
-    /// Checkpointing failed
-    CheckpointFailed(String),
-    /// Restore failed
-    RestoreFailed(String),
+    CheckpointFailed,
+    RestoreFailed,
 }
 
-impl std::fmt::Display for WorkspaceError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for WorkspaceError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             WorkspaceError::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
             WorkspaceError::SystemFailure(msg) => write!(f, "System failure: {}", msg),
@@ -104,38 +41,27 @@ impl std::fmt::Display for WorkspaceError {
             WorkspaceError::InvalidLocalAddress => write!(f, "Invalid local address"),
             WorkspaceError::CreationFailed => write!(f, "Workspace creation failed"),
             WorkspaceError::JoinFailed => write!(f, "Workspace join failed"),
-            WorkspaceError::OperationFailed(msg) => write!(f, "Operation failed: {}", msg),
+            WorkspaceError::OperationFailed => write!(f, "Operation failed"),
             WorkspaceError::InvalidTag => write!(f, "Invalid tag - must be positive"),
-            WorkspaceError::CheckpointFailed(msg) => write!(f, "Checkpoint failed: {}", msg),
-            WorkspaceError::RestoreFailed(msg) => write!(f, "Restore failed: {}", msg),
+            WorkspaceError::CheckpointFailed => write!(f, "Checkpoint failed"),
+            WorkspaceError::RestoreFailed => write!(f, "Restore failed"),
         }
     }
 }
 
-impl std::error::Error for WorkspaceError {}
+impl core::error::Error for WorkspaceError {}
 
 fn convert_error(code: i32) -> WorkspaceError {
     match code {
         0 => unreachable!("Success should not be converted to error"), // FD_WKSP_SUCCESS
-        -1 => WorkspaceError::InvalidInput("Invalid parameters".to_string()), // FD_WKSP_ERR_INVAL
-        -2 => WorkspaceError::SystemFailure("System limitation".to_string()), // FD_WKSP_ERR_FAIL
-        -3 => WorkspaceError::MemoryCorruption("Corruption detected".to_string()), // FD_WKSP_ERR_CORRUPT
-        _ => WorkspaceError::OperationFailed(format!("Unknown error code: {}", code)),
+        -1 => WorkspaceError::InvalidInput("Invalid parameters"),      // FD_WKSP_ERR_INVAL
+        -2 => WorkspaceError::SystemFailure("System limitation"),      // FD_WKSP_ERR_FAIL
+        -3 => WorkspaceError::MemoryCorruption("Corruption detected"), // FD_WKSP_ERR_CORRUPT
+        _ => WorkspaceError::OperationFailed,
     }
 }
 
-fn get_error_string(code: i32) -> String {
-    unsafe {
-        let c_str = sys::fd_wksp_strerror(code);
-        if c_str.is_null() {
-            format!("Unknown error: {}", code)
-        } else {
-            CStr::from_ptr(c_str).to_string_lossy().into_owned()
-        }
-    }
-}
-
-/// global address in the wksp address space
+#[repr(transparent)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct GlobalAddress(pub ulong);
 
@@ -151,7 +77,7 @@ impl GlobalAddress {
     }
 }
 
-/// Information about an allocation query result
+#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct AllocationInfo {
     pub gaddr_lo: GlobalAddress,
@@ -170,7 +96,7 @@ pub struct WorkspaceUsage {
     pub used_sz: usize,
 }
 
-/// A workspace allocation with automatic cleanup
+#[repr(C)]
 pub struct WorkspaceAllocation<'a> {
     workspace: &'a Workspace,
     gaddr: GlobalAddress,
@@ -199,56 +125,55 @@ impl<'a> WorkspaceAllocation<'a> {
         })
     }
 
-    /// Get the global address of this allocation
+    #[inline]
     pub fn global_address(&self) -> GlobalAddress {
         self.gaddr
     }
 
-    /// Get the local pointer to this allocation
+    #[inline]
     pub fn as_ptr(&self) -> *mut u8 {
         self.laddr.as_ptr()
     }
 
-    /// Get the size of this allocation
+    #[inline]
     pub fn size(&self) -> usize {
         self.size
     }
 
-    /// Get a mutable slice view of this allocation
+    #[inline]
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        unsafe { std::slice::from_raw_parts_mut(self.laddr.as_ptr(), self.size) }
+        unsafe { core::slice::from_raw_parts_mut(self.laddr.as_ptr(), self.size) }
     }
 
-    /// Get an immutable slice view of this allocation
+    #[inline]
     pub fn as_slice(&self) -> &[u8] {
-        unsafe { std::slice::from_raw_parts(self.laddr.as_ptr(), self.size) }
+        unsafe { core::slice::from_raw_parts(self.laddr.as_ptr(), self.size) }
     }
 
-    /// Clear the allocation memory to zeros
+    #[inline]
     pub fn clear(&mut self) {
         unsafe {
             sys::fd_wksp_memset(self.workspace.handle.as_ptr(), self.gaddr.0, 0);
         }
     }
 
-    /// Fill the allocation with a specific byte value
+    #[inline]
     pub fn fill(&mut self, value: u8) {
         unsafe {
             sys::fd_wksp_memset(self.workspace.handle.as_ptr(), self.gaddr.0, value as i32);
         }
     }
 
-    /// Get the tag associated with this allocation
+    #[inline]
     pub fn tag(&self) -> ulong {
         unsafe { sys::fd_wksp_tag(self.workspace.handle.as_ptr(), self.gaddr.0) }
     }
 
     /// Convert to a raw global address, consuming the allocation
-    ///
-    /// The caller is responsible for freeing the allocation
+    /// SAFETY: The caller is responsible for freeing the allocation
     pub fn into_raw(self) -> GlobalAddress {
         let gaddr = self.gaddr;
-        std::mem::forget(self); // Prevent automatic cleanup
+        core::mem::forget(self);
         gaddr
     }
 }
@@ -267,10 +192,10 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    /// Attach to an existing named wksp
+    #[inline]
     pub fn attach(name: &str) -> Result<Self, WorkspaceError> {
-        let c_name = CString::new(name)
-            .map_err(|_| WorkspaceError::InvalidInput("Invalid name".to_string()))?;
+        let c_name =
+            CString::new(name).map_err(|_| WorkspaceError::InvalidInput("Invalid name"))?;
 
         let handle_ptr = unsafe { sys::fd_wksp_attach(c_name.as_ptr()) };
         if handle_ptr.is_null() {
@@ -285,7 +210,7 @@ impl Workspace {
         })
     }
 
-    /// Create a new anonymous wksp
+    #[inline]
     pub(crate) fn new_anonymous(
         name: &str,
         page_sz: usize,
@@ -296,13 +221,11 @@ impl Workspace {
         opt_part_max: usize,
     ) -> Result<Self, WorkspaceError> {
         if sub_page_cnt.len() != sub_cnt || sub_cpu_idx.len() != sub_cnt {
-            return Err(WorkspaceError::InvalidInput(
-                "Mismatched array lengths".to_string(),
-            ));
+            return Err(WorkspaceError::InvalidInput("Mismatched array lengths"));
         }
 
-        let c_name = CString::new(name)
-            .map_err(|_| WorkspaceError::InvalidInput("Invalid name".to_string()))?;
+        let c_name =
+            CString::new(name).map_err(|_| WorkspaceError::InvalidInput("Invalid name"))?;
 
         let handle_ptr = unsafe {
             sys::fd_wksp_new_anon(
@@ -328,7 +251,7 @@ impl Workspace {
         })
     }
 
-    /// the name of the wksp
+    #[inline]
     pub fn name(&self) -> &str {
         unsafe {
             let c_str = sys::fd_wksp_name(self.handle.as_ptr());
@@ -336,33 +259,33 @@ impl Workspace {
         }
     }
 
-    /// the seed used for this wksp
+    #[inline]
     pub fn seed(&self) -> u32 {
         unsafe { sys::fd_wksp_seed(self.handle.as_ptr()) }
     }
 
-    /// max number of partitions
+    #[inline]
     pub fn part_max(&self) -> usize {
         unsafe { sys::fd_wksp_part_max(self.handle.as_ptr()) as usize }
     }
 
-    /// max data region size
+    #[inline]
     pub fn data_max(&self) -> usize {
         unsafe { sys::fd_wksp_data_max(self.handle.as_ptr()) as usize }
     }
 
-    /// current owner of the wksp (0 = no owner)
+    #[inline]
     pub fn owner(&self) -> ulong {
         unsafe { sys::fd_wksp_owner(self.handle.as_ptr()) }
     }
 
-    /// Allocate memory in the wksp
+    #[inline]
     pub fn allocate(
         &self,
         size: usize,
         align: usize,
         tag: ulong,
-    ) -> Result<WorkspaceAllocation, WorkspaceError> {
+    ) -> Result<WorkspaceAllocation<'_>, WorkspaceError> {
         if size == 0 {
             return Err(WorkspaceError::InvalidSize);
         }
@@ -385,13 +308,13 @@ impl Workspace {
         WorkspaceAllocation::new(self, GlobalAddress(gaddr), size)
     }
 
-    /// allocate with detailed range info
+    #[inline]
     pub fn allocate_at_least(
         &self,
         size: usize,
         align: usize,
         tag: ulong,
-    ) -> Result<(WorkspaceAllocation, GlobalAddress, GlobalAddress), WorkspaceError> {
+    ) -> Result<(WorkspaceAllocation<'_>, GlobalAddress, GlobalAddress), WorkspaceError> {
         if size == 0 {
             return Err(WorkspaceError::InvalidSize);
         }
@@ -426,21 +349,21 @@ impl Workspace {
         Ok((allocation, GlobalAddress(lo), GlobalAddress(hi)))
     }
 
-    /// free a wksp allocation by global address
+    #[inline]
     pub fn free_gaddr(&self, gaddr: GlobalAddress) {
         unsafe {
             sys::fd_wksp_free(self.handle.as_ptr(), gaddr.0);
         }
     }
 
-    /// free a wksp allocation
+    #[inline]
     pub fn free(&self, allocation: WorkspaceAllocation) -> Result<(), WorkspaceError> {
         let gaddr = allocation.into_raw();
         self.free_gaddr(gaddr);
         Ok(())
     }
 
-    /// convert global address to local address
+    #[inline]
     pub fn gaddr_to_laddr(&self, gaddr: GlobalAddress) -> Result<*mut u8, WorkspaceError> {
         let laddr = unsafe { sys::fd_wksp_laddr(self.handle.as_ptr(), gaddr.0) };
         if laddr.is_null() {
@@ -450,10 +373,10 @@ impl Workspace {
         }
     }
 
-    /// convert local address to global address
+    #[inline]
     pub fn laddr_to_gaddr(&self, laddr: *const u8) -> Result<GlobalAddress, WorkspaceError> {
         let gaddr =
-            unsafe { sys::fd_wksp_gaddr(self.handle.as_ptr(), laddr as *const std::ffi::c_void) };
+            unsafe { sys::fd_wksp_gaddr(self.handle.as_ptr(), laddr as *const core::ffi::c_void) };
         if gaddr == 0 {
             Err(WorkspaceError::InvalidLocalAddress)
         } else {
@@ -461,12 +384,11 @@ impl Workspace {
         }
     }
 
-    /// get the tag of an allocation by global address
+    #[inline]
     pub fn get_tag(&self, gaddr: GlobalAddress) -> ulong {
         unsafe { sys::fd_wksp_tag(self.handle.as_ptr(), gaddr.0) }
     }
 
-    /// query allocations by tags
     pub fn query_by_tag(&self, tags: &[ulong]) -> Result<Vec<AllocationInfo>, WorkspaceError> {
         if tags.is_empty() {
             return Ok(Vec::new());
@@ -477,7 +399,7 @@ impl Workspace {
                 self.handle.as_ptr(),
                 tags.as_ptr(),
                 tags.len() as ulong,
-                std::ptr::null_mut(),
+                core::ptr::null_mut(),
                 0,
             )
         };
@@ -517,7 +439,7 @@ impl Workspace {
             .collect())
     }
 
-    /// free all allocations with the given tags
+    #[inline]
     pub fn free_by_tag(&self, tags: &[ulong]) {
         if !tags.is_empty() {
             unsafe {
@@ -526,21 +448,21 @@ impl Workspace {
         }
     }
 
-    /// clear an allocation by global address
+    #[inline]
     pub fn clear_allocation(&self, gaddr: GlobalAddress) {
         unsafe {
             sys::fd_wksp_memset(self.handle.as_ptr(), gaddr.0, 0);
         }
     }
 
-    /// reset the wkspe, freeing all allocations
+    #[inline]
     pub fn reset(&self, seed: u32) {
         unsafe {
             sys::fd_wksp_reset(self.handle.as_ptr(), seed);
         }
     }
 
-    /// get wksp usage statistics
+    #[inline]
     pub fn usage(&self, tags: &[ulong]) -> WorkspaceUsage {
         let mut usage = sys::fd_wksp_usage {
             total_max: 0,
@@ -556,7 +478,7 @@ impl Workspace {
             sys::fd_wksp_usage(
                 self.handle.as_ptr(),
                 if tags.is_empty() {
-                    std::ptr::null()
+                    core::ptr::null()
                 } else {
                     tags.as_ptr()
                 },
@@ -576,7 +498,7 @@ impl Workspace {
         }
     }
 
-    /// verify wksp integrity
+    #[inline]
     pub fn verify(&self) -> Result<(), WorkspaceError> {
         let result = unsafe { sys::fd_wksp_verify(self.handle.as_ptr()) };
         if result != 0 {
@@ -587,7 +509,7 @@ impl Workspace {
         }
     }
 
-    /// rebuild wksp metadata
+    #[inline]
     pub fn rebuild(&self, seed: u32) -> Result<(), WorkspaceError> {
         let result = unsafe { sys::fd_wksp_rebuild(self.handle.as_ptr(), seed) };
         if result != 0 {
@@ -598,7 +520,7 @@ impl Workspace {
         }
     }
 
-    /// checkpoint the wksp to a file
+    #[inline]
     pub fn checkpoint(
         &self,
         path: &str,
@@ -606,8 +528,8 @@ impl Workspace {
         style: i32,
         user_info: Option<&str>,
     ) -> Result<(), WorkspaceError> {
-        let c_path = CString::new(path)
-            .map_err(|_| WorkspaceError::InvalidInput("Invalid path".to_string()))?;
+        let c_path =
+            CString::new(path).map_err(|_| WorkspaceError::InvalidInput("Invalid path"))?;
         let c_info = user_info.map(|s| CString::new(s).ok()).flatten();
 
         let result = unsafe {
@@ -616,34 +538,33 @@ impl Workspace {
                 c_path.as_ptr(),
                 mode as ulong,
                 style,
-                c_info.as_ref().map_or(std::ptr::null(), |s| s.as_ptr()),
+                c_info.as_ref().map_or(core::ptr::null(), |s| s.as_ptr()),
             )
         };
 
         if result != 0 {
             // FD_WKSP_SUCCESS
-            Err(WorkspaceError::CheckpointFailed(get_error_string(result)))
+            Err(WorkspaceError::CheckpointFailed)
         } else {
             Ok(())
         }
     }
 
-    /// restore wksp from a checkpoint file
+    #[inline]
     pub fn restore(&self, path: &str, seed: u32) -> Result<(), WorkspaceError> {
-        let c_path = CString::new(path)
-            .map_err(|_| WorkspaceError::InvalidInput("Invalid path".to_string()))?;
+        let c_path =
+            CString::new(path).map_err(|_| WorkspaceError::InvalidInput("Invalid path"))?;
 
         let result = unsafe { sys::fd_wksp_restore(self.handle.as_ptr(), c_path.as_ptr(), seed) };
 
         if result != 0 {
             // FD_WKSP_SUCCESS
-            Err(WorkspaceError::RestoreFailed(get_error_string(result)))
+            Err(WorkspaceError::RestoreFailed)
         } else {
             Ok(())
         }
     }
 
-    /// raw workspace handle
     pub fn as_raw(&self) -> *mut sys::fd_wksp_t {
         self.handle.as_ptr()
     }
@@ -663,8 +584,8 @@ impl Drop for Workspace {
     }
 }
 
-pub struct WorkspaceBuilder {
-    name: Option<String>,
+pub struct WorkspaceBuilder<'a> {
+    name: Option<&'a str>,
     page_size: usize,
     page_counts: Vec<usize>,
     cpu_indices: Vec<usize>,
@@ -672,7 +593,7 @@ pub struct WorkspaceBuilder {
     opt_part_max: usize,
 }
 
-impl WorkspaceBuilder {
+impl<'a> WorkspaceBuilder<'a> {
     pub fn new() -> Self {
         Self {
             name: None,
@@ -684,28 +605,33 @@ impl WorkspaceBuilder {
         }
     }
 
-    pub fn name(mut self, name: &str) -> Self {
-        self.name = Some(name.to_string());
+    #[inline]
+    pub fn name(mut self, name: &'a str) -> Self {
+        self.name = Some(name);
         self
     }
 
+    #[inline]
     pub fn page_size(mut self, size: usize) -> Self {
         self.page_size = size;
         self
     }
 
+    #[inline]
     pub fn page_count(mut self, count: usize) -> Self {
         self.page_counts = vec![count];
         self.cpu_indices = vec![0];
         self
     }
 
+    #[inline]
     pub fn multi_numa(mut self, page_counts: Vec<usize>, cpu_indices: Vec<usize>) -> Self {
         self.page_counts = page_counts;
         self.cpu_indices = cpu_indices;
         self
     }
 
+    #[inline]
     pub fn cpu_index(mut self, cpu_idx: usize) -> Self {
         if self.cpu_indices.len() == 1 {
             self.cpu_indices[0] = cpu_idx;
@@ -713,18 +639,20 @@ impl WorkspaceBuilder {
         self
     }
 
+    #[inline]
     pub fn seed(mut self, seed: u32) -> Self {
         self.seed = seed;
         self
     }
 
+    #[inline]
     pub fn part_max(mut self, part_max: usize) -> Self {
         self.opt_part_max = part_max;
         self
     }
 
     pub fn build_anonymous(self) -> Result<Workspace, WorkspaceError> {
-        let name = self.name.unwrap_or_else(|| "anonymous".to_string());
+        let name = self.name.unwrap_or_else(|| "anonymous");
 
         Workspace::new_anonymous(
             &name,
@@ -737,14 +665,13 @@ impl WorkspaceBuilder {
         )
     }
 
-    /// Build a named wksp (note: requires system setup)
     pub fn build_named(self) -> Result<Workspace, WorkspaceError> {
-        let name = self.name.ok_or_else(|| {
-            WorkspaceError::InvalidInput("Name required for named workspace".to_string())
-        })?;
+        let name = self
+            .name
+            .ok_or_else(|| WorkspaceError::InvalidInput("Name required for named workspace"))?;
 
-        let c_name = CString::new(name.as_str())
-            .map_err(|_| WorkspaceError::InvalidInput("Invalid name".to_string()))?;
+        let c_name =
+            CString::new(name).map_err(|_| WorkspaceError::InvalidInput("Invalid name"))?;
 
         let result = unsafe {
             sys::fd_wksp_new_named(
@@ -753,7 +680,7 @@ impl WorkspaceBuilder {
                 self.page_counts.len() as ulong,
                 self.page_counts.as_ptr() as *const ulong,
                 self.cpu_indices.as_ptr() as *const ulong,
-                0o666, // Default permissions
+                0o666,
                 self.seed,
                 self.opt_part_max as ulong,
             )
@@ -768,7 +695,7 @@ impl WorkspaceBuilder {
     }
 }
 
-impl Default for WorkspaceBuilder {
+impl<'a> Default for WorkspaceBuilder<'a> {
     fn default() -> Self {
         Self::new()
     }
@@ -777,22 +704,22 @@ impl Default for WorkspaceBuilder {
 pub mod utils {
     use super::*;
 
-    /// calculate workspace footprint for given parameters
+    #[inline]
     pub fn footprint(part_max: usize, data_max: usize) -> usize {
         unsafe { sys::fd_wksp_footprint(part_max as ulong, data_max as ulong) as usize }
     }
 
-    /// get workspace alignment requirement
+    #[inline]
     pub fn align() -> usize {
         unsafe { sys::fd_wksp_align() as usize }
     }
 
-    /// estimate max partitions for a given footprint and typical allocation size
+    #[inline]
     pub fn part_max_est(footprint: usize, sz_typical: usize) -> usize {
         unsafe { sys::fd_wksp_part_max_est(footprint as ulong, sz_typical as ulong) as usize }
     }
 
-    /// estimate max data size for a given footprint and partition count
+    #[inline]
     pub fn data_max_est(footprint: usize, part_max: usize) -> usize {
         unsafe { sys::fd_wksp_data_max_est(footprint as ulong, part_max as ulong) as usize }
     }
@@ -803,22 +730,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_builder() {
-        let builder = WorkspaceBuilder::new()
-            .name("test")
-            .page_size(4096)
-            .page_count(64)
-            .seed(42);
-
-        let wksp = builder.build_anonymous().unwrap();
-        assert_eq!(wksp.name(), "test");
-        assert_eq!(wksp.seed(), 42);
-    }
-
-    #[test]
-    fn test_simple_alloc() {
+    fn test_single_alloc() {
         let wksp = WorkspaceBuilder::new()
-            .name("test-alloc")
+            .name("test")
             .page_size(4096)
             .page_count(64)
             .seed(42)
@@ -839,9 +753,9 @@ mod tests {
     }
 
     #[test]
-    fn test_alloc() {
+    fn test_multi_alloc() {
         let wksp = WorkspaceBuilder::new()
-            .name("test-data")
+            .name("test")
             .page_size(4096)
             .page_count(64)
             .seed(42)
@@ -860,7 +774,7 @@ mod tests {
     #[test]
     fn test_tag_queries() {
         let wksp = WorkspaceBuilder::new()
-            .name("test-tags")
+            .name("test")
             .page_size(4096)
             .page_count(64)
             .seed(42)
@@ -889,7 +803,7 @@ mod tests {
     #[test]
     fn test_usage() {
         let wksp = WorkspaceBuilder::new()
-            .name("test-usage")
+            .name("test")
             .page_size(4096)
             .page_count(64)
             .seed(42)
@@ -953,7 +867,7 @@ mod tests {
         ));
 
         assert!(matches!(
-            wksp.allocate(1024, 63, 1), // not power of 2
+            wksp.allocate(1024, 63, 1),
             Err(WorkspaceError::InvalidAlignment)
         ));
 

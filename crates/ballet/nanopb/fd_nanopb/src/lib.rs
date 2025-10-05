@@ -1,60 +1,4 @@
-//! Safe Rust API for Firedancer nanopb implementation
-//!
-//! This crate provides safe abstractions over the raw FFI bindings in `fd_nanopb_sys`.
-//! nanopb is a lightweight Protocol Buffers implementation designed for embedded systems
-//! and resource-constrained environments.
-//!
-//! ## Features
-//!
-//! - **Memory safe**: All unsafe operations are encapsulated with proper error handling
-//! - **Zero-copy**: Efficient encoding/decoding with minimal allocations
-//! - **Buffer-only mode**: Simplified API that works with byte buffers
-//! - **Field iteration**: Safe iteration over protocol buffer message fields
-//! - **Error handling**: Comprehensive error types with descriptive messages
-//! - **No std support**: Can be used in no_std environments
-//!
-//! ## Usage
-//!
-//! ### Encoding
-//!
-//! ```rust,no_run
-//! use fd_nanopb::{OutputStream, Error};
-//!
-//! let mut buffer = [0u8; 1024];
-//! let mut stream = OutputStream::from_buffer(&mut buffer)?;
-//!
-//! // Encode data using pb_encode_* functions
-//! stream.write_varint(42)?;
-//! stream.write_string(b"hello")?;
-//!
-//! let encoded_size = stream.bytes_written();
-//! println!("Encoded {} bytes", encoded_size);
-//! ```
-//!
-//! ### Decoding
-//!
-//! ```rust,no_run
-//! use fd_nanopb::{InputStream, Error};
-//!
-//! let data = &[/* encoded protobuf data */];
-//! let mut stream = InputStream::from_buffer(data)?;
-//!
-//! // Decode data using pb_decode_* functions
-//! let value = stream.read_varint()?;
-//! let string_data = stream.read_string()?;
-//! ```
-//!
-//! ### Field Iteration
-//!
-//! ```rust,no_run
-//! use fd_nanopb::{FieldIter, MessageDescriptor};
-//!
-//! // Iterate over fields in a message descriptor
-//! let mut iter = FieldIter::begin(&descriptor, &message)?;
-//! while let Some(field) = iter.next() {
-//!     println!("Field tag: {}, type: {:?}", field.tag(), field.field_type());
-//! }
-//! ```
+//! Safe API for `fd_nanopb_sys`
 
 #![no_std]
 
@@ -70,23 +14,14 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
-    /// Buffer is too small for the operation
     BufferTooSmall,
-    /// Invalid data format or structure
     InvalidData(String),
-    /// End of stream reached unexpectedly
     UnexpectedEof,
-    /// Invalid field type or wire type
     InvalidField(String),
-    /// Invalid string encoding (not UTF-8)
     InvalidString,
-    /// Invalid varint encoding
     InvalidVarint,
-    /// Message is too large
     MessageTooLarge,
-    /// Internal nanopb error
     InternalError(String),
-    /// Null pointer or invalid memory access
     NullPointer,
 }
 
@@ -108,18 +43,13 @@ impl fmt::Display for Error {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WireType {
-    /// Variable-length integer
     Varint = sys::pb_wire_type_t_PB_WT_VARINT as isize,
-    /// 64-bit fixed-length value
     Fixed64 = sys::pb_wire_type_t_PB_WT_64BIT as isize,
-    /// Length-delimited value (strings, bytes, messages)
     LengthDelimited = sys::pb_wire_type_t_PB_WT_STRING as isize,
-    /// 32-bit fixed-length value
     Fixed32 = sys::pb_wire_type_t_PB_WT_32BIT as isize,
 }
 
 impl WireType {
-    /// Convert from raw wire type value
     pub fn from_raw(raw: u32) -> Option<Self> {
         match raw {
             sys::pb_wire_type_t_PB_WT_VARINT => Some(WireType::Varint),
@@ -131,14 +61,12 @@ impl WireType {
     }
 }
 
-/// Output stream for encoding Protocol Buffer data
 pub struct OutputStream<'a> {
     stream: sys::pb_ostream_t,
     _buffer: &'a mut [u8],
 }
 
 impl<'a> OutputStream<'a> {
-    /// Create an output stream from a mutable buffer
     pub fn from_buffer(buffer: &'a mut [u8]) -> Result<Self> {
         if buffer.is_empty() {
             return Err(Error::BufferTooSmall);
@@ -152,24 +80,20 @@ impl<'a> OutputStream<'a> {
         })
     }
 
-    /// Get the number of bytes written to the stream
     pub fn bytes_written(&self) -> usize {
         self.stream.bytes_written
     }
 
-    /// Get the maximum size of the stream
     pub fn max_size(&self) -> usize {
         self.stream.max_size
     }
 
-    /// Get the remaining space in the stream
     pub fn bytes_remaining(&self) -> usize {
         self.stream
             .max_size
             .saturating_sub(self.stream.bytes_written)
     }
 
-    /// Write raw bytes to the stream
     pub fn write(&mut self, data: &[u8]) -> Result<()> {
         let success = unsafe { sys::pb_write(&mut self.stream, data.as_ptr(), data.len()) };
 
@@ -180,7 +104,6 @@ impl<'a> OutputStream<'a> {
         }
     }
 
-    /// Write a varint to the stream
     pub fn write_varint(&mut self, value: u64) -> Result<()> {
         let success = unsafe { sys::pb_encode_varint(&mut self.stream, value) };
 
@@ -191,7 +114,6 @@ impl<'a> OutputStream<'a> {
         }
     }
 
-    /// Write a signed varint to the stream
     pub fn write_svarint(&mut self, value: i64) -> Result<()> {
         let success = unsafe { sys::pb_encode_svarint(&mut self.stream, value) };
 
@@ -202,7 +124,6 @@ impl<'a> OutputStream<'a> {
         }
     }
 
-    /// Write a string to the stream
     pub fn write_string(&mut self, data: &[u8]) -> Result<()> {
         let success = unsafe { sys::pb_encode_string(&mut self.stream, data.as_ptr(), data.len()) };
 
@@ -213,7 +134,6 @@ impl<'a> OutputStream<'a> {
         }
     }
 
-    /// Write a fixed32 value to the stream
     pub fn write_fixed32(&mut self, value: &[u8; 4]) -> Result<()> {
         let success = unsafe {
             sys::pb_encode_fixed32(&mut self.stream, value.as_ptr() as *const core::ffi::c_void)
@@ -226,7 +146,6 @@ impl<'a> OutputStream<'a> {
         }
     }
 
-    /// Write a fixed64 value to the stream
     pub fn write_fixed64(&mut self, value: &[u8; 8]) -> Result<()> {
         let success = unsafe {
             sys::pb_encode_fixed64(&mut self.stream, value.as_ptr() as *const core::ffi::c_void)
@@ -239,7 +158,6 @@ impl<'a> OutputStream<'a> {
         }
     }
 
-    /// Write a field tag to the stream
     pub fn write_tag(&mut self, wire_type: WireType, field_number: u32) -> Result<()> {
         let success =
             unsafe { sys::pb_encode_tag(&mut self.stream, wire_type as u32, field_number) };
@@ -251,7 +169,6 @@ impl<'a> OutputStream<'a> {
         }
     }
 
-    /// Get the current error from the stream
     fn get_error(&self) -> Error {
         let errmsg = unsafe {
             if self.stream.errmsg.is_null() {
@@ -264,20 +181,17 @@ impl<'a> OutputStream<'a> {
         Error::InternalError(String::from(errmsg))
     }
 
-    /// Get the encoded data written to the stream
     pub fn encoded_data(&self) -> &[u8] {
         &self._buffer[..self.bytes_written()]
     }
 }
 
-/// Input stream for decoding Protocol Buffer data
 pub struct InputStream<'a> {
     stream: sys::pb_istream_t,
     _data: &'a [u8],
 }
 
 impl<'a> InputStream<'a> {
-    /// Create an input stream from a buffer
     pub fn from_buffer(data: &'a [u8]) -> Result<Self> {
         if data.is_empty() {
             return Err(Error::BufferTooSmall);
@@ -291,17 +205,14 @@ impl<'a> InputStream<'a> {
         })
     }
 
-    /// Get the number of bytes remaining in the stream
     pub fn bytes_remaining(&self) -> usize {
         self.stream.bytes_left
     }
 
-    /// Check if the stream is at the end
     pub fn is_eof(&self) -> bool {
         self.stream.bytes_left == 0
     }
 
-    /// Read raw bytes from the stream
     pub fn read(&mut self, buffer: &mut [u8]) -> Result<()> {
         let success = unsafe { sys::pb_read(&mut self.stream, buffer.as_mut_ptr(), buffer.len()) };
 
@@ -312,7 +223,6 @@ impl<'a> InputStream<'a> {
         }
     }
 
-    /// Read a varint from the stream
     pub fn read_varint(&mut self) -> Result<u64> {
         let mut value = 0u64;
         let success = unsafe { sys::pb_decode_varint(&mut self.stream, &mut value) };
@@ -324,7 +234,6 @@ impl<'a> InputStream<'a> {
         }
     }
 
-    /// Read a 32-bit varint from the stream
     pub fn read_varint32(&mut self) -> Result<u32> {
         let mut value = 0u32;
         let success = unsafe { sys::pb_decode_varint32(&mut self.stream, &mut value) };
@@ -336,7 +245,6 @@ impl<'a> InputStream<'a> {
         }
     }
 
-    /// Read a signed varint from the stream
     pub fn read_svarint(&mut self) -> Result<i64> {
         let mut value = 0i64;
         let success = unsafe { sys::pb_decode_svarint(&mut self.stream, &mut value) };
@@ -348,7 +256,6 @@ impl<'a> InputStream<'a> {
         }
     }
 
-    /// Read a boolean from the stream
     pub fn read_bool(&mut self) -> Result<bool> {
         let mut value = false;
         let success = unsafe { sys::pb_decode_bool(&mut self.stream, &mut value) };
@@ -360,7 +267,6 @@ impl<'a> InputStream<'a> {
         }
     }
 
-    /// Read a fixed32 value from the stream
     pub fn read_fixed32(&mut self) -> Result<[u8; 4]> {
         let mut value = [0u8; 4];
         let success = unsafe {
@@ -377,7 +283,6 @@ impl<'a> InputStream<'a> {
         }
     }
 
-    /// Read a fixed64 value from the stream
     pub fn read_fixed64(&mut self) -> Result<[u8; 8]> {
         let mut value = [0u8; 8];
         let success = unsafe {
@@ -394,7 +299,6 @@ impl<'a> InputStream<'a> {
         }
     }
 
-    /// Decode a field tag from the stream
     pub fn read_tag(&mut self) -> Result<Option<(WireType, u32)>> {
         let mut wire_type = 0u32;
         let mut tag = 0u32;
@@ -417,7 +321,6 @@ impl<'a> InputStream<'a> {
         }
     }
 
-    /// Skip a field based on its wire type
     pub fn skip_field(&mut self, wire_type: WireType) -> Result<()> {
         let success = unsafe { sys::pb_skip_field(&mut self.stream, wire_type as u32) };
 
@@ -428,7 +331,6 @@ impl<'a> InputStream<'a> {
         }
     }
 
-    /// Create a substream for reading a length-delimited field
     pub fn make_string_substream(&mut self) -> Result<InputStream<'_>> {
         let mut substream = MaybeUninit::<sys::pb_istream_t>::uninit();
 
@@ -439,14 +341,13 @@ impl<'a> InputStream<'a> {
             let substream = unsafe { substream.assume_init() };
             Ok(InputStream {
                 stream: substream,
-                _data: &[], // Substream manages its own data reference
+                _data: &[],
             })
         } else {
             Err(self.get_error())
         }
     }
 
-    /// Close a string substream
     pub fn close_string_substream(&mut self, substream: InputStream<'_>) -> Result<()> {
         let success = unsafe {
             sys::pb_close_string_substream(
@@ -462,7 +363,6 @@ impl<'a> InputStream<'a> {
         }
     }
 
-    /// Get the current error from the stream
     fn get_error(&self) -> Error {
         let errmsg = unsafe {
             if self.stream.errmsg.is_null() {
@@ -481,10 +381,7 @@ pub struct MessageDescriptor {
 }
 
 impl MessageDescriptor {
-    /// Create a message descriptor from a raw pointer
-    ///
-    /// # Safety
-    /// The caller must ensure the descriptor pointer is valid and lives
+    /// SAFETY: The caller must ensure the descriptor pointer is valid and lives
     /// as long as this MessageDescriptor instance.
     pub unsafe fn from_raw(descriptor: *const sys::pb_msgdesc_t) -> Result<Self> {
         if descriptor.is_null() {
@@ -493,25 +390,19 @@ impl MessageDescriptor {
         Ok(Self { descriptor })
     }
 
-    /// Get the number of fields in the message
     pub fn field_count(&self) -> usize {
         unsafe { (*self.descriptor).field_count as usize }
     }
 
-    /// Get the number of required fields in the message
     pub fn required_field_count(&self) -> usize {
         unsafe { (*self.descriptor).required_field_count as usize }
     }
 
-    /// Get the largest tag number in the message
     pub fn largest_tag(&self) -> u32 {
         unsafe { (*self.descriptor).largest_tag }
     }
 
-    /// Get the raw descriptor pointer
-    ///
-    /// # Safety
-    /// The caller must ensure the returned pointer is not used after
+    /// SAFETY: The caller must ensure the returned pointer is not used after
     /// this MessageDescriptor is dropped.
     pub unsafe fn as_raw(&self) -> *const sys::pb_msgdesc_t {
         self.descriptor
@@ -527,10 +418,7 @@ pub struct FieldIter {
 }
 
 impl FieldIter {
-    /// Begin iteration over fields in a message
-    ///
-    /// # Safety
-    /// The caller must ensure the descriptor and message pointers are valid
+    /// SAFETY: The caller must ensure the descriptor and message pointers are valid
     /// and live as long as this iterator.
     pub unsafe fn begin(
         descriptor: &MessageDescriptor,
@@ -552,32 +440,26 @@ impl FieldIter {
         }
     }
 
-    /// Move to the next field
     pub fn next(&mut self) -> bool {
         unsafe { sys::pb_field_iter_next(&mut self.iter) }
     }
 
-    /// Find a field with the given tag
     pub fn find(&mut self, tag: u32) -> bool {
         unsafe { sys::pb_field_iter_find(&mut self.iter, tag) }
     }
 
-    /// Get the current field's tag
     pub fn tag(&self) -> u32 {
         self.iter.tag as u32
     }
 
-    /// Get the current field's data size
     pub fn data_size(&self) -> usize {
         self.iter.data_size as usize
     }
 
-    /// Get the current field's array size
     pub fn array_size(&self) -> usize {
         self.iter.array_size as usize
     }
 
-    /// Get the current field's type
     pub fn field_type(&self) -> u8 {
         self.iter.type_
     }
@@ -586,10 +468,7 @@ impl FieldIter {
 pub mod utils {
     use super::*;
 
-    /// Calculate the size needed to encode a message
-    ///
-    /// # Safety
-    /// The caller must ensure the descriptor and message pointers are valid.
+    /// SAFETY: The caller must ensure the descriptor and message pointers are valid.
     pub unsafe fn get_encoded_size(
         descriptor: &MessageDescriptor,
         message: *const core::ffi::c_void,
@@ -606,10 +485,7 @@ pub mod utils {
         }
     }
 
-    /// Encode a complete message to a buffer
-    ///
-    /// # Safety
-    /// The caller must ensure the descriptor and message pointers are valid.
+    /// SAFETY: The caller must ensure the descriptor and message pointers are valid.
     pub unsafe fn encode_message(
         buffer: &mut [u8],
         descriptor: &MessageDescriptor,
@@ -625,10 +501,7 @@ pub mod utils {
         }
     }
 
-    /// Decode a complete message from a buffer
-    ///
-    /// # Safety
-    /// The caller must ensure the descriptor and message pointers are valid.
+    /// SAFETY: The caller must ensure the descriptor and message pointers are valid.
     pub unsafe fn decode_message(
         data: &[u8],
         descriptor: &MessageDescriptor,
@@ -644,10 +517,7 @@ pub mod utils {
         }
     }
 
-    /// Release any allocated memory in a decoded message
-    ///
-    /// # Safety
-    /// The caller must ensure the descriptor and message pointers are valid.
+    /// SAFETY: The caller must ensure the descriptor and message pointers are valid.
     pub unsafe fn release_message(descriptor: &MessageDescriptor, message: *mut core::ffi::c_void) {
         sys::pb_release(descriptor.descriptor, message);
     }
@@ -656,7 +526,6 @@ pub mod utils {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
 
     #[test]
     fn test_output_stream() {

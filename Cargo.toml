@@ -8,9 +8,9 @@ members = [
     "crates/util/math/*",
     "crates/util/net/*",
     #"crates/util/tpool/*",
-    # "crates/util/wksp/*",
-    # "crates/util/checkpt/*",
-    #"crates/util/tile/*",
+    "crates/util/wksp/*",
+    "crates/util/checkpt/*",
+    "crates/util/tile/*",
     # "crates/util/valloc/*",
     # "crates/util/scratch/*",
     # "crates/util/spad/*",
@@ -18,8 +18,9 @@ members = [
     #"crates/util/shmem/*",
     "crates/tango/*/*",
     "crates/ballet/*/*",
-    #"crates/waltz/grpc/*",
-    #"crates/waltz/http/*",
+    "crates/flamenco/*/*",
+    "crates/composites/*",
+    "crates/waltz/quic/*",
 ]
 
 [workspace.package]

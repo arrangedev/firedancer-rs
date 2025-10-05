@@ -1,0 +1,9 @@
+[package]
+name = "fd_svm_log"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_svm_log_sys = { path = "../fd_svm_log_sys" }
+
+[dev-dependencies]

@@ -1,8 +1,4 @@
-//! Raw bindings to the Firedancer checkpoint utils
-//!
-//! This crate provides unsafe FFI bindings to the Firedancer checkpoint and restore
-//! functionality, which enables fast parallel compressed checkpoint and restore operations.
-//! For a safe API, consider using the higher-level wrapper crate.
+//! Raw FFI bindings for `/util/checkpt`
 
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]

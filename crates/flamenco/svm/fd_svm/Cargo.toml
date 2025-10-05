@@ -1,0 +1,14 @@
+[package]
+name = "fd_svm"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+
+[dependencies]
+fd_svm_sys = { path = "../fd_svm_sys" }
+
+[dev-dependencies]
+libc = "0.2.175"
+test-case = "3.3.1"

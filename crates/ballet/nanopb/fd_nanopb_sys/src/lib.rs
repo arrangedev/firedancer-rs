@@ -1,42 +1,4 @@
-//! Raw FFI bindings to Firedancer's nanopb implementation
-//!
-//! This crate provides unsafe, low-level bindings to the nanopb Protocol Buffers
-//! implementation used by Firedancer. These bindings are generated automatically
-//! from the C headers using bindgen.
-//!
-//! ## Safety
-//!
-//! All functions in this crate are `unsafe` and require careful handling of:
-//! - Memory management (allocation/deallocation)
-//! - Pointer validity and lifetimes
-//! - Thread safety
-//! - Proper initialization of structures
-//!
-//! For a safe, idiomatic Rust API, use the `fd_nanopb` crate instead.
-//!
-//! ## Configuration
-//!
-//! This implementation is configured with:
-//! - `PB_FIELD_32BIT=1`: Support for large messages and field numbers > 65536
-//! - `PB_ENABLE_MALLOC=1`: Dynamic allocation support
-//! - `PB_BUFFER_ONLY=1`: Buffer-only mode (no custom streams)
-//!
-//! ## Example
-//!
-//! ```rust,no_run
-//! use fd_nanopb_sys::*;
-//! use std::mem::MaybeUninit;
-//!
-//! unsafe {
-//!     // Create a buffer for encoding
-//!     let mut buffer = [0u8; 1024];
-//!     let mut stream = pb_ostream_from_buffer(buffer.as_mut_ptr(), buffer.len());
-//!     
-//!     // Encoding would happen here with pb_encode()...
-//!     
-//!     println!("Encoded {} bytes", (*stream).bytes_written);
-//! }
-//! ```
+//! Raw FFI bindings to nanopb (vendored from the firedancer repo)
 
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]

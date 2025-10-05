@@ -12,16 +12,27 @@ fn main() {
     let ed25519_path = ballet_path.join("ed25519");
     let sha512_path = ballet_path.join("sha512");
     let sha256_path = ballet_path.join("sha256");
+    let base58_path = ballet_path.join("base58");
+    let hex_path = ballet_path.join("hex");
     let util_path = vendor_path.join("util");
 
-    setup_rerun(&ed25519_path, &sha512_path, &sha256_path, &util_path);
+    setup_rerun(
+        &ed25519_path,
+        &sha512_path,
+        &sha256_path,
+        &base58_path,
+        &hex_path,
+        &util_path,
+    );
 
-    let wrapper_path = generate_header(&ed25519_path);
+    let wrapper_path = generate_header(&ed25519_path, &base58_path, &hex_path);
     let mut bindgen = init_bindgen(&wrapper_path, &ballet_path, &util_path, &vendor_path);
     let mut build = init_cc(
         &ed25519_path,
         &sha512_path,
         &sha256_path,
+        &base58_path,
+        &hex_path,
         &ballet_path,
         &util_path,
         &vendor_path,
@@ -42,6 +53,8 @@ fn setup_rerun(
     ed25519_path: &PathBuf,
     sha512_path: &PathBuf,
     sha256_path: &PathBuf,
+    base58_path: &PathBuf,
+    hex_path: &PathBuf,
     util_path: &PathBuf,
 ) {
     println!(
@@ -100,33 +113,59 @@ fn setup_rerun(
         "cargo:rerun-if-changed={}",
         util_path.join("fd_util_base.h").display()
     );
+    println!(
+        "cargo:rerun-if-changed={}",
+        hex_path.join("fd_hex.h").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        hex_path.join("fd_hex.c").display()
+    );
+
+    if cfg!(feature = "base58") {
+        println!(
+            "cargo:rerun-if-changed={}",
+            base58_path.join("fd_base58.h").display()
+        );
+        println!(
+            "cargo:rerun-if-changed={}",
+            base58_path.join("fd_base58.c").display()
+        );
+    }
 }
 
-fn generate_header(ed25519_path: &PathBuf) -> PathBuf {
+fn generate_header(ed25519_path: &PathBuf, base58_path: &PathBuf, hex_path: &PathBuf) -> PathBuf {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     let wrapper_path = out_path.join("ed25519_wrapper.h");
     let sha256_path = ed25519_path.parent().unwrap().join("sha256");
 
-    std::fs::write(
-        &wrapper_path,
-        format!(
-            r#"
+    let mut header_content = format!(
+        r#"
 #include "{}/fd_ed25519.h"
 #include "{}/fd_f25519.h"
 #include "{}/fd_curve25519.h"
 #include "{}/fd_ristretto255.h"
 #include "{}/fd_x25519.h"
 #include "{}/fd_sha256.h"
+#include "{}/fd_hex.h"
 "#,
-            ed25519_path.canonicalize().unwrap().display(),
-            ed25519_path.canonicalize().unwrap().display(),
-            ed25519_path.canonicalize().unwrap().display(),
-            ed25519_path.canonicalize().unwrap().display(),
-            ed25519_path.canonicalize().unwrap().display(),
-            sha256_path.canonicalize().unwrap().display(),
-        ),
-    )
-    .expect("Failed to write wrapper header");
+        ed25519_path.canonicalize().unwrap().display(),
+        ed25519_path.canonicalize().unwrap().display(),
+        ed25519_path.canonicalize().unwrap().display(),
+        ed25519_path.canonicalize().unwrap().display(),
+        ed25519_path.canonicalize().unwrap().display(),
+        sha256_path.canonicalize().unwrap().display(),
+        hex_path.canonicalize().unwrap().display()
+    );
+
+    if cfg!(feature = "base58") {
+        header_content.push_str(&format!(
+            "#include \"{}/fd_base58.h\"\n",
+            base58_path.canonicalize().unwrap().display()
+        ));
+    }
+
+    std::fs::write(&wrapper_path, header_content).expect("Failed to write wrapper header");
 
     wrapper_path
 }
@@ -137,7 +176,7 @@ fn init_bindgen(
     util_path: &PathBuf,
     vendor_path: &PathBuf,
 ) -> bindgen::Builder {
-    bindgen::Builder::default()
+    let mut builder = bindgen::Builder::default()
         .wrap_static_fns(true)
         .wrap_static_fns_path(wrapper_path)
         .header(wrapper_path.to_string_lossy())
@@ -154,16 +193,28 @@ fn init_bindgen(
         .allowlist_function("fd_ristretto255_.*")
         .allowlist_function("fd_sha512_.*")
         .allowlist_function("fd_sha256_.*")
+        .allowlist_function("fd_hex_.*")
         .allowlist_type("fd_ed25519_.*")
         .allowlist_type("fd_x25519_.*")
         .allowlist_type("fd_ristretto255_.*")
         .allowlist_type("fd_sha512_.*")
         .allowlist_type("fd_sha256_.*")
+        .allowlist_type("fd_hex_.*")
         .allowlist_var("FD_ED25519_.*")
         .allowlist_var("FD_X25519_.*")
         .allowlist_var("FD_RISTRETTO255_.*")
         .allowlist_var("FD_SHA512_.*")
         .allowlist_var("FD_SHA256_.*")
+        .allowlist_var("FD_HEX_.*");
+
+    if cfg!(feature = "base58") {
+        builder = builder
+            .allowlist_function("fd_base58_.*")
+            .allowlist_type("fd_base58_.*")
+            .allowlist_var("FD_BASE58_.*");
+    }
+
+    builder
         .allowlist_var("FD_.*")
         .allowlist_recursively(true)
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
@@ -173,6 +224,8 @@ fn init_cc(
     ed25519_path: &PathBuf,
     sha512_path: &PathBuf,
     sha256_path: &PathBuf,
+    base58_path: &PathBuf,
+    hex_path: &PathBuf,
     ballet_path: &PathBuf,
     util_path: &PathBuf,
     vendor_path: &PathBuf,
@@ -189,6 +242,7 @@ fn init_cc(
         .file(ed25519_path.join("fd_ristretto255.c"))
         .file(sha512_path.join("fd_sha512.c"))
         .file(sha256_path.join("fd_sha256.c"))
+        .file(hex_path.join("fd_hex.c"))
         .include(ballet_path)
         .include(util_path)
         .include(vendor_path)
@@ -199,15 +253,19 @@ fn init_cc(
         .flag("-fPIC")
         .flag("-Wno-error=implicit-function-declaration");
 
+    if cfg!(feature = "base58") {
+        build.file(base58_path.join("fd_base58.c"));
+    }
+
     build
 }
 
 fn spec_target(
-    target_info: &TargetInfo,
-    bindgen: &mut bindgen::Builder,
+    _target_info: &TargetInfo,
+    _bindgen: &mut bindgen::Builder,
     build: &mut cc::Build,
     ed25519_path: &PathBuf,
-    sha512_path: &PathBuf,
+    _sha512_path: &PathBuf,
 ) {
     //if target_info.is_x86_64() {
     //    cfg_x86_64(target_info, bindgen, build, ed25519_path, sha512_path);

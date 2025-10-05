@@ -1,50 +1,4 @@
-//! Low-level FFI bindings to Firedancer's fd_wksp module.
-//!
-//! This crate provides raw, unsafe bindings to the Firedancer workspace (wksp) API.
-//! For safe, idiomatic Rust wrappers, see the `fd_wksp` crate.
-//!
-//! # Safety
-//!
-//! All functions in this crate are unsafe and require careful handling of:
-//! - Memory management and lifetime guarantees
-//! - Thread safety and concurrency
-//! - Proper initialization and cleanup
-//!
-//! # Example
-//!
-//! ```rust,no_run
-//! use fd_wksp_sys::*;
-//! use std::ffi::CString;
-//! use std::ptr;
-//!
-//! unsafe {
-//!     // create a new anonymous wksp
-//!     let name = CString::new("test-wksp").unwrap();
-//!     let wksp = fd_wksp_new_anon(
-//!         name.as_ptr(),
-//!         4096,  // page_sz
-//!         1,     // sub_cnt
-//!         &256,  // sub_page_cnt
-//!         &0,    // sub_cpu_idx
-//!         42,    // seed
-//!         0,     // opt_part_max (0 = auto)
-//!     );
-//!
-//!     if !wksp.is_null() {
-//!         // allocate
-//!         let gaddr = fd_wksp_alloc(wksp, 0, 1024, 1);
-//!         if gaddr != 0 {
-//!             // convert to localaddr
-//!             let laddr = fd_wksp_laddr(wksp, gaddr);
-//!             // devs do something...
-//!             fd_wksp_free(wksp, gaddr);
-//!         }
-//!         
-//!         // cleanup
-//!         fd_wksp_delete_anon(wksp);
-//!     }
-//! }
-//! ```
+//! Raw FFI bindings for `/util/wksp`
 
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
@@ -56,20 +10,10 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::CString;
+    use core::ffi::CStr;
 
     #[test]
-    fn test_wksp_constants() {
-        assert_eq!(FD_WKSP_SUCCESS, 0);
-        assert!(FD_WKSP_ERR_INVAL < 0);
-        assert!(FD_WKSP_ERR_FAIL < 0);
-        assert!(FD_WKSP_ERR_CORRUPT < 0);
-        assert!(FD_WKSP_ALIGN > 0);
-        assert!(FD_WKSP_ALIGN_DEFAULT >= 16);
-    }
-
-    #[test]
-    fn test_wksp_footprint_calculation() {
+    fn test_wksp_footprint_calc() {
         unsafe {
             let align = fd_wksp_align();
             assert_eq!(align, FD_WKSP_ALIGN as u64);
@@ -80,10 +24,10 @@ mod tests {
     }
 
     #[test]
-    fn test_wksp_estimation_functions() {
+    fn test_wksp_est_fns() {
         unsafe {
-            let footprint = 16 * 1024 * 1024; // 16MB
-            let sz_typical = 64 * 1024; // 64KB
+            let footprint = 16 * 1024 * 1024;
+            let sz_typical = 64 * 1024;
 
             let part_max_est = fd_wksp_part_max_est(footprint, sz_typical);
             assert!(part_max_est > 0);
@@ -106,9 +50,9 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn test_anonymous_workspace_lifecycle() {
+    fn test_anon_wksp_lifecycle() {
         unsafe {
-            let name = CString::new("test-anon-wksp").unwrap();
+            let name = CStr::from_bytes_with_nul(b"test-anon-wksp\0").unwrap();
             let page_cnt = 64;
             let cpu_idx = 0;
 

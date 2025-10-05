@@ -1,15 +1,19 @@
 //! Safe API for `fd_ed25519_sys`.
 
+use core::ffi::c_void;
 use core::fmt;
 use core::mem::MaybeUninit;
 use fd_ed25519_sys as sys;
 
-pub const ED25519_SIGNATURE_SIZE: usize = 64;
-pub const ED25519_PUBLIC_KEY_SIZE: usize = 32;
-pub const ED25519_PRIVATE_KEY_SIZE: usize = 32;
-pub const X25519_PUBLIC_KEY_SIZE: usize = 32;
-pub const X25519_PRIVATE_KEY_SIZE: usize = 32;
-pub const X25519_SHARED_SECRET_SIZE: usize = 32;
+pub const PUBKEY_BYTES: usize = 32;
+pub const SIGNATURE_BYTES: usize = 64;
+
+pub(crate) const ED25519_SIGNATURE_SIZE: usize = 64;
+pub(crate) const ED25519_PUBLIC_KEY_SIZE: usize = 32;
+pub(crate) const ED25519_PRIVATE_KEY_SIZE: usize = 32;
+pub(crate) const X25519_PUBLIC_KEY_SIZE: usize = 32;
+pub(crate) const X25519_PRIVATE_KEY_SIZE: usize = 32;
+pub(crate) const X25519_SHARED_SECRET_SIZE: usize = 32;
 
 pub const MAX_SEED_LEN: usize = 32;
 pub const MAX_SEEDS: usize = 16;
@@ -69,10 +73,9 @@ fn bytes_are_curve_point(bytes: [u8; 32]) -> bool {
     }
 }
 
+#[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Pubkey {
-    bytes: [u8; ED25519_PUBLIC_KEY_SIZE],
-}
+pub struct Pubkey([u8; ED25519_PUBLIC_KEY_SIZE]);
 
 impl Pubkey {
     pub fn from_bytes(bytes: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Result<Self, Ed25519Error> {
@@ -83,15 +86,47 @@ impl Pubkey {
     /// It's up to the caller to ensure the bytes represent a valid public key, and
     /// are properly aligned.
     pub unsafe fn from_bytes_unchecked(bytes: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Self {
-        Self { bytes: *bytes }
+        Self(*bytes)
     }
 
     pub fn as_bytes(&self) -> &[u8; ED25519_PUBLIC_KEY_SIZE] {
-        &self.bytes
+        &self.0
     }
 
     pub fn is_on_curve(&self) -> bool {
-        bytes_are_curve_point(self.bytes)
+        bytes_are_curve_point(self.0)
+    }
+
+    pub fn to_hex(&self) -> String {
+        crate::hex::encode(&self.0)
+    }
+
+    pub fn from_hex(hex_str: &str) -> Result<Self, Ed25519Error> {
+        let bytes = crate::hex::decode(hex_str)?;
+        if bytes.len() != ED25519_PUBLIC_KEY_SIZE {
+            return Err(Ed25519Error::InvalidInput(
+                "Invalid hex length for public key",
+            ));
+        }
+        let mut key_bytes = [0u8; ED25519_PUBLIC_KEY_SIZE];
+        key_bytes.copy_from_slice(&bytes);
+        Ok(Self(key_bytes))
+    }
+
+    #[cfg(feature = "base58")]
+    pub fn to_base58(&self) -> String {
+        crate::base58::encode_32(&self.0)
+    }
+
+    #[cfg(feature = "base58")]
+    pub fn from_base58(encoded: &str) -> Result<Self, Ed25519Error> {
+        let bytes = crate::base58::decode_32(encoded)?;
+        Ok(Self(bytes))
+    }
+
+    #[cfg(feature = "base58")]
+    pub const fn from_base58_const(encoded: &str) -> Self {
+        Self(five8_const::decode_32_const(encoded))
     }
 
     /// Iterates over a set of seeds to create a valid Program Derived Address.
@@ -143,27 +178,23 @@ impl Pubkey {
             let mut sha = sha.assume_init();
 
             for seed in seeds.iter() {
-                sys::fd_sha256_append(
-                    &mut sha,
-                    seed.as_ptr() as *const ::std::os::raw::c_void,
-                    seed.len() as u64,
-                );
+                sys::fd_sha256_append(&mut sha, seed.as_ptr() as *const c_void, seed.len() as u64);
             }
 
             sys::fd_sha256_append(
                 &mut sha,
-                program_id.as_ref().as_ptr() as *const ::std::os::raw::c_void,
+                program_id.as_ref().as_ptr() as *const c_void,
                 program_id.as_ref().len() as u64,
             );
 
             sys::fd_sha256_append(
                 &mut sha,
-                PDA_MARKER.as_ptr() as *const ::std::os::raw::c_void,
+                PDA_MARKER.as_ptr() as *const c_void,
                 PDA_MARKER.len() as u64,
             );
 
             let mut hash = [0u8; 32];
-            sys::fd_sha256_fini(&mut sha, hash.as_mut_ptr() as *mut ::std::os::raw::c_void);
+            sys::fd_sha256_fini(&mut sha, hash.as_mut_ptr() as *mut c_void);
 
             if bytes_are_curve_point(hash) {
                 return Err(Ed25519Error::InvalidInput("Provided seeds are invalid"));
@@ -185,27 +216,23 @@ impl Pubkey {
             let mut sha = sha.assume_init();
 
             for seed in seeds.iter() {
-                sys::fd_sha256_append(
-                    &mut sha,
-                    seed.as_ptr() as *const ::std::os::raw::c_void,
-                    seed.len() as u64,
-                );
+                sys::fd_sha256_append(&mut sha, seed.as_ptr() as *const c_void, seed.len() as u64);
             }
 
             sys::fd_sha256_append(
                 &mut sha,
-                program_id.as_ref().as_ptr() as *const ::std::os::raw::c_void,
+                program_id.as_ref().as_ptr() as *const c_void,
                 program_id.as_ref().len() as u64,
             );
 
             sys::fd_sha256_append(
                 &mut sha,
-                PDA_MARKER.as_ptr() as *const ::std::os::raw::c_void,
+                PDA_MARKER.as_ptr() as *const c_void,
                 PDA_MARKER.len() as u64,
             );
 
             let mut hash = [0u8; 32];
-            sys::fd_sha256_fini(&mut sha, hash.as_mut_ptr() as *mut ::std::os::raw::c_void);
+            sys::fd_sha256_fini(&mut sha, hash.as_mut_ptr() as *mut c_void);
 
             if bytes_are_curve_point(hash) {
                 return Err(Ed25519Error::InvalidInput("Provided seeds are invalid"));
@@ -224,8 +251,8 @@ impl Pubkey {
             let result = sys::fd_ed25519_verify(
                 message.as_ptr(),
                 message.len() as u64,
-                signature.bytes.as_ptr(),
-                self.bytes.as_ptr(),
+                signature.as_ref().as_ptr(),
+                self.as_ref().as_ptr(),
                 &mut sha,
             );
 
@@ -238,54 +265,112 @@ impl Pubkey {
     }
 }
 
-impl AsRef<[u8]> for Pubkey {
-    fn as_ref(&self) -> &[u8] {
-        &self.bytes
+impl AsRef<[u8; ED25519_PUBLIC_KEY_SIZE]> for Pubkey {
+    fn as_ref(&self) -> &[u8; ED25519_PUBLIC_KEY_SIZE] {
+        &self.0
     }
 }
 
-impl From<[u8; 32]> for Pubkey {
-    fn from(bytes: [u8; 32]) -> Self {
-        Self { bytes }
+impl From<&[u8]> for Pubkey {
+    fn from(bytes: &[u8]) -> Self {
+        let mut buf = [0u8; ED25519_PUBLIC_KEY_SIZE];
+        buf.copy_from_slice(bytes);
+        Self(buf)
+    }
+}
+
+impl From<[u8; ED25519_PUBLIC_KEY_SIZE]> for Pubkey {
+    fn from(bytes: [u8; ED25519_PUBLIC_KEY_SIZE]) -> Self {
+        Self(bytes)
+    }
+}
+
+impl Default for Pubkey {
+    fn default() -> Self {
+        Self([0u8; ED25519_PUBLIC_KEY_SIZE])
     }
 }
 
 impl fmt::Debug for Pubkey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Pubkey")
-            .field("bytes", &hex::encode(&self.bytes))
+            .field("bytes", &hex::encode(&self.0))
             .finish()
     }
 }
 
+#[repr(transparent)]
 #[derive(Clone, PartialEq, Eq)]
-pub struct Signature {
-    bytes: [u8; ED25519_SIGNATURE_SIZE],
-}
+pub struct Signature([u8; ED25519_SIGNATURE_SIZE]);
 
 impl Signature {
     pub fn from_bytes(bytes: &[u8; ED25519_SIGNATURE_SIZE]) -> Result<Self, Ed25519Error> {
-        Ok(Self { bytes: *bytes })
+        Ok(Self(*bytes))
     }
 
     pub fn as_bytes(&self) -> &[u8; ED25519_SIGNATURE_SIZE] {
-        &self.bytes
+        &self.0
+    }
+
+    pub fn to_hex(&self) -> String {
+        hex::encode(&self.0)
+    }
+
+    pub fn from_hex(hex_str: &str) -> Result<Self, Ed25519Error> {
+        let bytes = hex::decode(hex_str)?;
+        if bytes.len() != ED25519_SIGNATURE_SIZE {
+            return Err(Ed25519Error::InvalidInput(
+                "Invalid hex length for signature",
+            ));
+        }
+        let mut sig_bytes = [0u8; ED25519_SIGNATURE_SIZE];
+        sig_bytes.copy_from_slice(&bytes);
+        Ok(Self(sig_bytes))
+    }
+
+    #[cfg(feature = "base58")]
+    pub fn to_base58(&self) -> String {
+        base58::encode_64(&self.0)
+    }
+
+    #[cfg(feature = "base58")]
+    pub fn from_base58(encoded: &str) -> Result<Self, Ed25519Error> {
+        let bytes = base58::decode_64(encoded)?;
+        Ok(Self(bytes))
     }
 }
 
 impl fmt::Debug for Signature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Signature")
-            .field("bytes", &hex::encode(&self.bytes[..8]))
+            .field("bytes", &hex::encode(&self.0[..8]))
             .field("truncated", &"...")
             .finish()
     }
 }
 
-pub struct Keypair {
-    secret_key: [u8; ED25519_PRIVATE_KEY_SIZE],
-    pubkey: Pubkey,
+impl AsRef<[u8; ED25519_SIGNATURE_SIZE]> for Signature {
+    fn as_ref(&self) -> &[u8; ED25519_SIGNATURE_SIZE] {
+        &self.0
+    }
 }
+
+impl From<[u8; ED25519_SIGNATURE_SIZE]> for Signature {
+    fn from(bytes: [u8; ED25519_SIGNATURE_SIZE]) -> Self {
+        Self(bytes)
+    }
+}
+
+impl From<&[u8]> for Signature {
+    fn from(bytes: &[u8]) -> Self {
+        let mut buf = [0u8; ED25519_SIGNATURE_SIZE];
+        buf.copy_from_slice(bytes);
+        Self(buf)
+    }
+}
+
+#[repr(C)]
+pub struct Keypair([u8; ED25519_PRIVATE_KEY_SIZE], Pubkey);
 
 impl Keypair {
     pub fn from_secret_key(
@@ -306,21 +391,16 @@ impl Keypair {
                 return Err(Ed25519Error::CryptoError("Failed to derive public key"));
             }
 
-            Ok(Self {
-                secret_key: *secret_key,
-                pubkey: Pubkey {
-                    bytes: pubkey_bytes,
-                },
-            })
+            Ok(Self(*secret_key, Pubkey(pubkey_bytes)))
         }
     }
 
     pub fn pubkey(&self) -> &Pubkey {
-        &self.pubkey
+        &self.1
     }
 
     pub fn secret_key(&self) -> &[u8; ED25519_PRIVATE_KEY_SIZE] {
-        &self.secret_key
+        &self.0
     }
 
     pub fn sign(&self, message: &[u8]) -> Result<Signature, Ed25519Error> {
@@ -334,8 +414,8 @@ impl Keypair {
                 signature_bytes.as_mut_ptr(),
                 message.as_ptr(),
                 message.len() as u64,
-                self.pubkey.bytes.as_ptr(),
-                self.secret_key.as_ptr(),
+                self.pubkey().as_ref().as_ptr(),
+                self.secret_key().as_ptr(),
                 &mut sha,
             );
 
@@ -343,9 +423,7 @@ impl Keypair {
                 return Err(Ed25519Error::CryptoError("Failed to sign message"));
             }
 
-            Ok(Signature {
-                bytes: signature_bytes,
-            })
+            Ok(Signature(signature_bytes))
         }
     }
 }
@@ -353,9 +431,23 @@ impl Keypair {
 impl fmt::Debug for Keypair {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Keypair")
-            .field("pubkey", &self.pubkey)
+            .field("pubkey", &self.pubkey())
             .field("secret_key", &"<redacted>")
             .finish()
+    }
+}
+
+impl AsRef<[u8; ED25519_PRIVATE_KEY_SIZE]> for Keypair {
+    fn as_ref(&self) -> &[u8; ED25519_PRIVATE_KEY_SIZE] {
+        &self.0
+    }
+}
+
+impl From<&[u8]> for Keypair {
+    fn from(bytes: &[u8]) -> Self {
+        let mut buf = [0u8; ED25519_PRIVATE_KEY_SIZE];
+        buf.copy_from_slice(bytes);
+        Self::from_secret_key(&buf).expect("Failed to create keypair from bytes")
     }
 }
 
@@ -381,11 +473,11 @@ pub fn batch_verify_single_message(
         let mut shas = Vec::with_capacity(pubkeys.len());
 
         for signature in signatures {
-            signature_bytes.extend_from_slice(&signature.bytes);
+            signature_bytes.extend_from_slice(signature.as_ref());
         }
 
         for pubkey in pubkeys {
-            pubkey_bytes.extend_from_slice(&pubkey.bytes);
+            pubkey_bytes.extend_from_slice(pubkey.as_ref());
         }
 
         for _ in 0..pubkeys.len() {
@@ -415,22 +507,19 @@ pub fn batch_verify_single_message(
     }
 }
 
-pub struct X25519PrivateKey {
-    bytes: [u8; X25519_PRIVATE_KEY_SIZE],
-}
+#[repr(transparent)]
+pub struct X25519PrivateKey([u8; X25519_PRIVATE_KEY_SIZE]);
 
 impl X25519PrivateKey {
     pub fn from_bytes(bytes: &[u8; X25519_PRIVATE_KEY_SIZE]) -> Result<Self, Ed25519Error> {
-        Ok(Self { bytes: *bytes })
+        Ok(Self(*bytes))
     }
 
     pub fn pubkey(&self) -> X25519PublicKey {
         unsafe {
             let mut pubkey_bytes = [0u8; X25519_PUBLIC_KEY_SIZE];
-            sys::fd_x25519_public(pubkey_bytes.as_mut_ptr(), self.bytes.as_ptr());
-            X25519PublicKey {
-                bytes: pubkey_bytes,
-            }
+            sys::fd_x25519_public(pubkey_bytes.as_mut_ptr(), self.as_ref().as_ptr());
+            X25519PublicKey(pubkey_bytes)
         }
     }
 
@@ -442,22 +531,20 @@ impl X25519PrivateKey {
             let mut shared_secret_bytes = [0u8; X25519_SHARED_SECRET_SIZE];
             let result = sys::fd_x25519_exchange(
                 shared_secret_bytes.as_mut_ptr(),
-                self.bytes.as_ptr(),
-                peer_pubkey.bytes.as_ptr(),
+                self.as_ref().as_ptr(),
+                peer_pubkey.as_ref().as_ptr(),
             );
 
             if result.is_null() {
                 return Err(Ed25519Error::KeyExchangeFailed);
             }
 
-            Ok(X25519SharedSecret {
-                bytes: shared_secret_bytes,
-            })
+            Ok(X25519SharedSecret(shared_secret_bytes))
         }
     }
 
     pub fn as_bytes(&self) -> &[u8; X25519_PRIVATE_KEY_SIZE] {
-        &self.bytes
+        &self.0
     }
 }
 
@@ -469,56 +556,199 @@ impl fmt::Debug for X25519PrivateKey {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
-pub struct X25519PublicKey {
-    bytes: [u8; X25519_PUBLIC_KEY_SIZE],
+impl AsRef<[u8; X25519_PRIVATE_KEY_SIZE]> for X25519PrivateKey {
+    fn as_ref(&self) -> &[u8; X25519_PRIVATE_KEY_SIZE] {
+        &self.0
+    }
 }
+
+impl From<[u8; X25519_PRIVATE_KEY_SIZE]> for X25519PrivateKey {
+    fn from(bytes: [u8; X25519_PRIVATE_KEY_SIZE]) -> Self {
+        Self(bytes)
+    }
+}
+
+#[repr(transparent)]
+#[derive(Clone, PartialEq, Eq)]
+pub struct X25519PublicKey([u8; X25519_PUBLIC_KEY_SIZE]);
 
 impl X25519PublicKey {
     pub fn from_bytes(bytes: &[u8; X25519_PUBLIC_KEY_SIZE]) -> Result<Self, Ed25519Error> {
-        Ok(Self { bytes: *bytes })
+        Ok(Self(*bytes))
     }
 
     pub fn as_bytes(&self) -> &[u8; X25519_PUBLIC_KEY_SIZE] {
-        &self.bytes
+        &self.0
     }
 }
 
 impl fmt::Debug for X25519PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("X25519PublicKey")
-            .field("bytes", &hex::encode(&self.bytes))
+            .field("bytes", &hex::encode(&self.0))
             .finish()
     }
 }
 
-pub struct X25519SharedSecret {
-    bytes: [u8; X25519_SHARED_SECRET_SIZE],
+impl AsRef<[u8]> for X25519PublicKey {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
 }
+
+impl From<[u8; X25519_PUBLIC_KEY_SIZE]> for X25519PublicKey {
+    fn from(bytes: [u8; X25519_PUBLIC_KEY_SIZE]) -> Self {
+        Self(bytes)
+    }
+}
+
+#[repr(transparent)]
+pub struct X25519SharedSecret([u8; X25519_SHARED_SECRET_SIZE]);
 
 impl X25519SharedSecret {
     pub fn as_bytes(&self) -> &[u8; X25519_SHARED_SECRET_SIZE] {
-        &self.bytes
-    }
-}
-
-impl fmt::Debug for X25519SharedSecret {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("X25519SharedSecret")
-            .field("bytes", &"<redacted>")
-            .finish()
+        &self.0
     }
 }
 
 impl Drop for X25519SharedSecret {
     fn drop(&mut self) {
-        self.bytes.fill(0);
+        self.0.fill(0);
     }
 }
 
-mod hex {
-    pub fn encode(data: &[u8]) -> String {
-        data.iter().map(|b| format!("{:02x}", b)).collect()
+impl AsRef<[u8; X25519_SHARED_SECRET_SIZE]> for X25519SharedSecret {
+    fn as_ref(&self) -> &[u8; X25519_SHARED_SECRET_SIZE] {
+        &self.0
+    }
+}
+
+impl From<[u8; X25519_SHARED_SECRET_SIZE]> for X25519SharedSecret {
+    fn from(bytes: [u8; X25519_SHARED_SECRET_SIZE]) -> Self {
+        Self(bytes)
+    }
+}
+
+#[cfg(feature = "base58")]
+pub mod base58 {
+    use crate::Ed25519Error;
+    use fd_ed25519_sys as sys;
+
+    pub const ENCODED_32_LEN: usize = sys::FD_BASE58_ENCODED_32_LEN as usize;
+    pub const ENCODED_64_LEN: usize = sys::FD_BASE58_ENCODED_64_LEN as usize;
+
+    #[macro_export]
+    macro_rules! pubkey {
+        ($str:expr) => {
+            $crate::Pubkey::from_base58_const($str)
+        };
+    }
+
+    pub fn encode_32(bytes: &[u8; 32]) -> String {
+        unsafe {
+            let mut out = [0u8; sys::FD_BASE58_ENCODED_32_SZ as usize];
+            let mut len = 0usize;
+            let result = sys::fd_base58_encode_32(
+                bytes.as_ptr(),
+                &mut len as *mut usize as *mut u64,
+                out.as_mut_ptr() as *mut i8,
+            );
+            if result.is_null() {
+                panic!("Base58 encoding failed");
+            }
+            std::str::from_utf8_unchecked(&out[..len]).to_string()
+        }
+    }
+
+    pub fn encode_64(bytes: &[u8; 64]) -> String {
+        unsafe {
+            let mut out = [0u8; sys::FD_BASE58_ENCODED_64_SZ as usize];
+            let mut len = 0usize;
+            let result = sys::fd_base58_encode_64(
+                bytes.as_ptr(),
+                &mut len as *mut usize as *mut u64,
+                out.as_mut_ptr() as *mut i8,
+            );
+            if result.is_null() {
+                panic!("Base58 encoding failed");
+            }
+            core::str::from_utf8_unchecked(&out[..len]).to_string()
+        }
+    }
+
+    pub fn decode_32(encoded: &str) -> Result<[u8; 32], Ed25519Error> {
+        unsafe {
+            let mut out = [0u8; 32];
+            let c_str = std::ffi::CString::new(encoded)
+                .map_err(|_| Ed25519Error::InvalidInput("Invalid base58 string"))?;
+            let result = sys::fd_base58_decode_32(c_str.as_ptr(), out.as_mut_ptr());
+            if result.is_null() {
+                return Err(Ed25519Error::InvalidInput("Failed to decode base58"));
+            }
+            Ok(out)
+        }
+    }
+
+    pub fn decode_64(encoded: &str) -> Result<[u8; 64], Ed25519Error> {
+        unsafe {
+            let mut out = [0u8; 64];
+            let c_str = std::ffi::CString::new(encoded)
+                .map_err(|_| Ed25519Error::InvalidInput("Invalid base58 string"))?;
+            let result = sys::fd_base58_decode_64(c_str.as_ptr(), out.as_mut_ptr());
+            if result.is_null() {
+                return Err(Ed25519Error::InvalidInput("Failed to decode base58"));
+            }
+            Ok(out)
+        }
+    }
+}
+
+pub mod hex {
+    use crate::Ed25519Error;
+    use fd_ed25519_sys as sys;
+
+    pub fn encode(bytes: &[u8]) -> String {
+        unsafe {
+            let mut out = vec![0u8; bytes.len() * 2 + 1]; // null terminator, +1
+            let result = sys::fd_hex_encode(
+                out.as_mut_ptr() as *mut i8,
+                bytes.as_ptr() as *const core::ffi::c_void,
+                bytes.len() as u64,
+            );
+            if result.is_null() {
+                panic!("Hex encoding failed");
+            }
+
+            let len = out.iter().position(|&b| b == 0).unwrap_or(out.len());
+            core::str::from_utf8_unchecked(&out[..len]).to_string()
+        }
+    }
+
+    pub fn decode(hex_str: &str) -> Result<Vec<u8>, Ed25519Error> {
+        if hex_str.len() % 2 != 0 {
+            return Err(Ed25519Error::InvalidInput(
+                "Hex string must have even length",
+            ));
+        }
+
+        let expected_len = hex_str.len() / 2;
+        let mut out = vec![0u8; expected_len];
+
+        unsafe {
+            let c_str = std::ffi::CString::new(hex_str)
+                .map_err(|_| Ed25519Error::InvalidInput("Invalid hex string"))?;
+            let decoded_len = sys::fd_hex_decode(
+                out.as_mut_ptr() as *mut std::ffi::c_void,
+                c_str.as_ptr(),
+                expected_len as u64,
+            );
+
+            if decoded_len != expected_len as u64 {
+                return Err(Ed25519Error::InvalidInput("Failed to decode hex string"));
+            }
+        }
+
+        Ok(out)
     }
 }
 
@@ -666,12 +896,96 @@ mod tests {
         assert_eq!(address1, address2);
         assert_eq!(bump1, bump2);
 
-        println!("Found PDA: {:?} with bump {}", address1.as_bytes(), bump1);
-
         let mut seeds_with_bump = seeds.to_vec();
         let bump_seed = &[bump1];
         seeds_with_bump.push(bump_seed);
         let recreated = Pubkey::create_program_address(&seeds_with_bump, &program_id).unwrap();
+
         assert_eq!(recreated, address1);
+    }
+
+    #[test]
+    fn test_pubkey_hex_roundtrip() {
+        let secret_key = [123u8; 32];
+        let keypair = Keypair::from_secret_key(&secret_key).unwrap();
+        let pubkey = keypair.pubkey();
+
+        let hex_str = pubkey.to_hex();
+        let decoded_pubkey = Pubkey::from_hex(&hex_str).unwrap();
+
+        assert_eq!(pubkey, &decoded_pubkey);
+    }
+
+    #[test]
+    fn test_sig_hex_roundtrip() {
+        let secret_key = [200u8; 32];
+        let keypair = Keypair::from_secret_key(&secret_key).unwrap();
+        let message = b"hex test message";
+        let signature = keypair.sign(message).unwrap();
+
+        let hex_str = signature.to_hex();
+        let decoded_signature = Signature::from_hex(&hex_str).unwrap();
+
+        assert_eq!(signature, decoded_signature);
+    }
+
+    #[cfg(feature = "base58")]
+    #[test]
+    fn test_pubkey_base58_roundtrip() {
+        let secret_key = [42u8; 32];
+        let keypair = Keypair::from_secret_key(&secret_key).unwrap();
+        let pubkey = keypair.pubkey();
+
+        let base58_str = pubkey.to_base58();
+        let decoded_pubkey = Pubkey::from_base58(&base58_str).unwrap();
+
+        assert_eq!(pubkey, &decoded_pubkey);
+    }
+
+    #[cfg(feature = "base58")]
+    #[test]
+    fn test_sig_base58_roundtrip() {
+        let secret_key = [99u8; 32];
+        let keypair = Keypair::from_secret_key(&secret_key).unwrap();
+        let message = b"test message";
+        let signature = keypair.sign(message).unwrap();
+
+        let base58_str = signature.to_base58();
+        let decoded_signature = Signature::from_base58(&base58_str).unwrap();
+
+        assert_eq!(signature, decoded_signature);
+    }
+
+    #[cfg(feature = "base58")]
+    #[test]
+    fn test_encoding() {
+        let pubkey_bytes = [1u8; 32];
+        let pubkey = Pubkey::from_bytes(&pubkey_bytes).unwrap();
+
+        let base58_str = pubkey.to_base58();
+        let hex_str = pubkey.to_hex();
+
+        let from_base58 = Pubkey::from_base58(&base58_str).unwrap();
+        let from_hex = Pubkey::from_hex(&hex_str).unwrap();
+
+        assert_eq!(pubkey, from_base58);
+        assert_eq!(pubkey, from_hex);
+        assert_eq!(from_base58, from_hex);
+    }
+
+    #[cfg(feature = "base58")]
+    #[test]
+    fn test_pubkey_macro() {
+        const SYSTEM_PROGRAM: &str = "11111111111111111111111111111111";
+        const __PUBKEY: Pubkey = pubkey!(SYSTEM_PROGRAM);
+
+        let _pubkey = pubkey!(SYSTEM_PROGRAM);
+        let pubkey_literal = pubkey!("11111111111111111111111111111111");
+
+        assert_eq!(__PUBKEY, _pubkey);
+        let key = Pubkey::from_base58(SYSTEM_PROGRAM).unwrap();
+        assert_eq!(pubkey_literal, key);
+        assert_eq!(pubkey_literal, _pubkey);
+        assert_eq!(_pubkey, key);
     }
 }

@@ -10,5 +10,6 @@ links = "fdwksp"
 [build-dependencies]
 bindgen = { version = "0.72.1" }
 cc = "1.0"
+firedancer-rs-common = { path = "../../../common" }
 
 [dev-dependencies]
