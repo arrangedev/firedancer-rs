@@ -14,6 +14,7 @@ fn main() {
     let tango_path = vendor_path.join("tango");
     let waltz_path = vendor_path.join("waltz");
     let ballet_path = vendor_path.join("ballet");
+    let disco_path = vendor_path.join("disco");
     let util_path = vendor_path.join("util");
 
     setup_rerun(
@@ -45,6 +46,7 @@ fn main() {
     let mut build = init_cc(
         &topo_path,
         &stem_path,
+        &disco_path,
         &tango_path,
         &waltz_path,
         &ballet_path,
@@ -238,9 +240,10 @@ fn init_bindgen(
 fn init_cc(
     topo_path: &PathBuf,
     stem_path: &PathBuf,
-    _tango_path: &PathBuf,
-    _waltz_path: &PathBuf,
-    _ballet_path: &PathBuf,
+    disco_path: &PathBuf,
+    tango_path: &PathBuf,
+    waltz_path: &PathBuf,
+    ballet_path: &PathBuf,
     util_path: &PathBuf,
     vendor_path: &PathBuf,
 ) -> cc::Build {
