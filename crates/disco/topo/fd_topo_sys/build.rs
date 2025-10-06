@@ -316,10 +316,21 @@ fn init_cc(
             .define("FD_TILE_MAX", "1024");
 
         if target_info.is_x86_64() {
-            cpp_build
-                .define("FD_HAS_X86", "1")
-                .define("FD_HAS_SSE", "1")
-                .define("FD_HAS_AVX", "1");
+            let no_simd = std::env::var("NO_SIMD").unwrap_or_default() == "1";
+
+            cpp_build.define("FD_HAS_X86", "1");
+
+            if no_simd {
+                cpp_build
+                    .define("FD_HAS_SSE", "0")
+                    .define("FD_HAS_AVX", "0")
+                    .define("FD_HAS_AVX512", "0");
+            } else {
+                cpp_build
+                    .define("FD_HAS_SSE", "1")
+                    .define("FD_HAS_AVX", "1")
+                    .define("FD_HAS_AVX512", "1");
+            }
         } else if target_info.is_aarch64() {
             cpp_build.define("FD_HAS_ARM", "1");
         }
@@ -361,25 +372,37 @@ fn spec_target(
 }
 
 fn cfg_x86_64(build: &mut cc::Build) {
-    build
-        .define("FD_HAS_X86", "1")
-        .define("FD_HAS_SSE", "1")
-        .define("FD_HAS_AVX", "1")
-        .define("FD_HAS_AVX512", "1")
-        .flag("-msse")
-        .flag("-msse2")
-        .flag("-mavx")
-        .flag("-mavx2");
+    let no_simd = std::env::var("NO_SIMD").unwrap_or_default() == "1";
 
-    #[cfg(target_os = "linux")]
-    {
+    build.define("FD_HAS_X86", "1");
+
+    if no_simd {
         build
-            .flag("-mavx512f")
-            .flag("-mavx512bw")
-            .flag("-mavx512dq")
-            .flag("-mavx512vl")
-            .flag("-mavx512ifma")
-            .flag("-mavx512vbmi");
+            .define("FD_HAS_SSE", "0")
+            .define("FD_HAS_AVX", "0")
+            .define("FD_HAS_AVX512", "0");
+        println!("cargo:warning=Building with SIMD disabled (NO_SIMD=1)");
+    } else {
+        build
+            .define("FD_HAS_SSE", "1")
+            .define("FD_HAS_AVX", "1")
+            .define("FD_HAS_AVX512", "1")
+            .flag("-msse")
+            .flag("-msse2")
+            .flag("-mavx")
+            .flag("-mavx2");
+
+        #[cfg(target_os = "linux")]
+        {
+            build
+                .flag("-mavx512f")
+                .flag("-mavx512bw")
+                .flag("-mavx512dq")
+                .flag("-mavx512vl")
+                .flag("-mavx512ifma")
+                .flag("-mavx512vbmi");
+        }
+        println!("cargo:warning=simd-enabled (disable with NO_SIMD=1)");
     }
 }
 
