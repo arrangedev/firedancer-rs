@@ -2,7 +2,135 @@ use crate::{Result, Topo, TopoError};
 use core::mem;
 use core::ptr;
 use fd_topo_sys as sys;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
+
+/// Callback functions for topology objects
+pub struct ObjectCallbacks {
+    /// Object name (must match the name used when creating the object)
+    pub name: String,
+    /// Calculate the memory footprint required for this object
+    pub footprint:
+        unsafe extern "C" fn(topo: *const sys::fd_topo_t, obj: *const sys::fd_topo_obj_t) -> u64,
+    /// Calculate the memory alignment required for this object
+    pub align:
+        unsafe extern "C" fn(topo: *const sys::fd_topo_t, obj: *const sys::fd_topo_obj_t) -> u64,
+    /// Calculate loose memory requirements (optional, can be None)
+    pub loose: Option<
+        unsafe extern "C" fn(topo: *const sys::fd_topo_t, obj: *const sys::fd_topo_obj_t) -> u64,
+    >,
+    /// Initialize the object after memory allocation (optional, can be None)
+    pub new:
+        Option<unsafe extern "C" fn(topo: *const sys::fd_topo_t, obj: *const sys::fd_topo_obj_t)>,
+}
+
+impl ObjectCallbacks {
+    pub fn new(
+        name: impl Into<String>,
+        footprint: unsafe extern "C" fn(
+            topo: *const sys::fd_topo_t,
+            obj: *const sys::fd_topo_obj_t,
+        ) -> u64,
+        align: unsafe extern "C" fn(
+            topo: *const sys::fd_topo_t,
+            obj: *const sys::fd_topo_obj_t,
+        ) -> u64,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            footprint,
+            align,
+            loose: None,
+            new: None,
+        }
+    }
+
+    /// loose memory callback
+    pub fn with_loose(
+        mut self,
+        loose: unsafe extern "C" fn(
+            topo: *const sys::fd_topo_t,
+            obj: *const sys::fd_topo_obj_t,
+        ) -> u64,
+    ) -> Self {
+        self.loose = Some(loose);
+        self
+    }
+
+    pub fn with_new(
+        mut self,
+        new: unsafe extern "C" fn(topo: *const sys::fd_topo_t, obj: *const sys::fd_topo_obj_t),
+    ) -> Self {
+        self.new = Some(new);
+        self
+    }
+}
+
+/// A collection of object callbacks that can be passed to the topology builder
+pub struct CallbackRegistry {
+    callbacks: Vec<ObjectCallbacks>,
+    // Keep the C-compatible structures alive
+    c_callbacks: Vec<sys::fd_topo_obj_callbacks_t>,
+    c_names: Vec<CString>,
+    c_callback_ptrs: Vec<*mut sys::fd_topo_obj_callbacks_t>,
+}
+
+impl CallbackRegistry {
+    /// Create a new empty callback registry
+    pub fn new() -> Self {
+        Self {
+            callbacks: Vec::new(),
+            c_callbacks: Vec::new(),
+            c_names: Vec::new(),
+            c_callback_ptrs: Vec::new(),
+        }
+    }
+
+    /// Add an object callback to the registry
+    pub fn add_callback(&mut self, callback: ObjectCallbacks) -> Result<()> {
+        self.callbacks.push(callback);
+        Ok(())
+    }
+
+    /// Finalize the registry and return a pointer suitable for fd_topob_finish
+    ///
+    /// This must be called after all callbacks are added and before calling build()
+    pub fn finalize(&mut self) -> Result<*mut *mut sys::fd_topo_obj_callbacks_t> {
+        self.c_callbacks.clear();
+        self.c_names.clear();
+        self.c_callback_ptrs.clear();
+
+        for callback in &self.callbacks {
+            let c_name = CString::new(callback.name.clone())?;
+
+            let c_callback = sys::fd_topo_obj_callbacks_t {
+                name: c_name.as_ptr(),
+                footprint: Some(callback.footprint),
+                align: Some(callback.align),
+                loose: callback.loose,
+                new: callback.new,
+            };
+
+            self.c_names.push(c_name);
+            self.c_callbacks.push(c_callback);
+        }
+
+        // Create pointers to the C callbacks
+        for c_callback in &mut self.c_callbacks {
+            self.c_callback_ptrs.push(c_callback as *mut _);
+        }
+
+        // Add null terminator
+        self.c_callback_ptrs.push(ptr::null_mut());
+
+        Ok(self.c_callback_ptrs.as_mut_ptr())
+    }
+}
+
+impl Default for CallbackRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[repr(C)]
 pub struct TopoBuilder {
@@ -184,10 +312,9 @@ impl TopoBuilder {
         Ok(())
     }
 
-    pub fn build(self) -> Result<Topo> {
+    pub fn build(self, callbacks: *mut *mut sys::fd_topo_obj_callbacks_t) -> Result<Topo> {
         unsafe {
-            // Finish the topology with null callbacks for now
-            sys::fd_topob_finish(self.inner, ptr::null_mut());
+            sys::fd_topob_finish(self.inner, callbacks);
             let topo = Topo::from_raw(self.inner, true);
 
             // we're transferring ownership, so we can use forget here

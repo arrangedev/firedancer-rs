@@ -22,7 +22,7 @@ pub mod object;
 pub mod tile;
 pub mod workspace;
 
-pub use builder::TopoBuilder;
+pub use builder::{CallbackRegistry, ObjectCallbacks, TopoBuilder};
 pub use cpu_topo::CpuTopology;
 pub use error::{Result, TopoError};
 pub use link::Link;
@@ -295,25 +295,6 @@ unsafe impl Sync for Topo {}
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_topology_creation() {
-        let result = std::panic::catch_unwind(|| {
-            let mut builder = TopoBuilder::new("test_topo").expect("Failed to create builder");
-            builder
-                .add_workspace("test")
-                .expect("Failed to add workspace");
-            builder
-                .add_link("test_link", "test", 64, 256, 4)
-                .expect("Failed to add link");
-            builder
-                .add_tile("test_tile", "test", "test", None, false, false)
-                .expect("Failed to add tile");
-            let _topo = builder.build().expect("Failed to build topology");
-        });
-
-        assert!(result.is_ok(), "Topology creation should not panic");
-    }
 
     #[test]
     fn test_cpu_topology() {

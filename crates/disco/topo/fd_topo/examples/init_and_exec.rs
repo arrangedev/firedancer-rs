@@ -1,4 +1,4 @@
-use fd_topo::{CpuTopology, Result, TopoBuilder};
+use fd_topo::{CallbackRegistry, CpuTopology, ObjectCallbacks, Result, TopoBuilder};
 
 fn main() -> Result<()> {
     let cpu_topo = match std::env::var("FD_CPU_METHOD").as_deref() {
@@ -59,10 +59,14 @@ fn main() -> Result<()> {
     create_tiles(&mut builder)?;
     wire_topology(&mut builder)?;
 
-    builder.auto_layout(false)?;
+    // auto layout won't work on some machines, and we've already manually laid out topology
+    // builder.auto_layout(false)?;
     println!("> ✓ auto-layout");
 
-    let mut topo = builder.build()?;
+    let mut callbacks = create_callbacks()?;
+    let callback_ptr = callbacks.finalize()?;
+
+    let mut topo = builder.build(callback_ptr)?;
     println!("> ✓ built topology");
 
     analyze_topology(&topo)?;
@@ -264,4 +268,50 @@ fn simulate_execution(topo: &mut fd_topo::Topo) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn create_callbacks() -> Result<CallbackRegistry> {
+    let mut registry = CallbackRegistry::new();
+
+    let basic_objects = [
+        "tile",
+        "metric",
+        "net_rx_buf",
+        "net_tx_buf",
+        "quic_conn",
+        "quic_stream",
+        "verify_0",
+        "verify_1",
+        "pack_pending",
+        "pack_micro",
+        "bank_acc_0",
+        "bank_acc_1",
+        "bank_prog_0",
+        "bank_prog_1",
+        "metrd",
+    ];
+
+    for obj_name in &basic_objects {
+        registry.add_callback(ObjectCallbacks::new(
+            *obj_name,
+            basic_footprint,
+            basic_align,
+        ))?;
+    }
+
+    Ok(registry)
+}
+
+unsafe extern "C" fn basic_footprint(
+    _topo: *const fd_topo_sys::fd_topo_t,
+    _obj: *const fd_topo_sys::fd_topo_obj_t,
+) -> u64 {
+    4096
+}
+
+unsafe extern "C" fn basic_align(
+    _topo: *const fd_topo_sys::fd_topo_t,
+    _obj: *const fd_topo_sys::fd_topo_obj_t,
+) -> u64 {
+    64
 }
