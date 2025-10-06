@@ -16,22 +16,16 @@ fn main() -> Result<()> {
             println!("> [cpu-cfg] FD_CPU_METHOD=manual, cpus={cpu_count}, numa={numa_count}",);
             CpuTopology::new_custom(cpu_count, numa_count)?
         }
-        _ => match CpuTopology::new() {
+        _ => match CpuTopology::new_simple() {
             Ok(topo) => {
                 eprintln!("    >> ✓ cpu-topology found");
                 topo
             }
-            Err(e) => match CpuTopology::new_simple() {
-                Ok(topo) => {
-                    eprintln!("    >> ✓ cpu-topology found");
-                    topo
-                }
-                Err(e2) => {
-                    let topo = CpuTopology::new_custom(6, 1)?;
-                    eprintln!("    >> ✓ cpu-topology configured");
-                    topo
-                }
-            },
+            Err(e2) => {
+                let topo = CpuTopology::new_custom(6, 1)?;
+                eprintln!("    >> ✓ cpu-topology configured");
+                topo
+            }
         },
     };
 

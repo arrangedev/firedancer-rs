@@ -16,15 +16,15 @@ pub struct CpuTopology {
 }
 
 impl CpuTopology {
-    /// initialize cpu topology using automatic detection from the operating system
-    pub fn new() -> Result<Self> {
-        unsafe { crate::init() };
+    // /// initialize cpu topology using automatic detection from the operating system
+    // pub fn new() -> Result<Self> {
+    //     unsafe { crate::init() };
 
-        let mut cpus = unsafe { core::mem::zeroed::<sys::fd_topo_cpus_t>() };
-        unsafe { sys::fd_topo_cpus_init(&mut cpus) };
+    //     let mut cpus = unsafe { core::mem::zeroed::<sys::fd_topo_cpus_t>() };
+    //     unsafe { sys::fd_topo_cpus_init(&mut cpus) };
 
-        Ok(Self { inner: cpus })
-    }
+    //     Ok(Self { inner: cpus })
+    // }
 
     /// initialize cpu topology with custom configuration
     ///
