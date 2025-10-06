@@ -12,6 +12,7 @@
 
 use fd_topo_sys as sys;
 use std::ffi::{CStr, CString};
+use std::sync::Once;
 
 pub mod builder;
 pub mod cpu_topo;
@@ -28,6 +29,22 @@ pub use link::Link;
 pub use object::Object;
 pub use tile::Tile;
 pub use workspace::Workspace;
+
+static INIT: Once = Once::new();
+
+pub unsafe fn init() {
+    INIT.call_once(|| {
+        let program_name = b"fd_topo\0".as_ptr() as *mut i8;
+        let mut argv_array = [program_name, std::ptr::null_mut()];
+        let mut argc = 1i32;
+        let mut argv = argv_array.as_mut_ptr();
+        sys::fd_boot(&mut argc, &mut argv);
+    });
+}
+
+pub unsafe fn shutdown() {
+    sys::fd_halt();
+}
 
 pub const MAX_WORKSPACES: usize = sys::FD_TOPO_MAX_WKSPS as usize;
 pub const MAX_LINKS: usize = sys::FD_TOPO_MAX_LINKS as usize;
