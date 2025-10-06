@@ -114,35 +114,35 @@ fn create_tiles(builder: &mut TopoBuilder) -> Result<()> {
     println!("   > creating tiles");
 
     builder.add_tile("net", "net", "metric", Some(0), false, false)?;
-    builder.add_object("net_rx_buffer", "net")?;
-    builder.add_object("net_tx_buffer", "net")?;
+    builder.add_object("net_rx_buf", "net")?;
+    builder.add_object("net_tx_buf", "net")?;
     println!("   >> ✓ net (cpuid=0)");
 
     builder.add_tile("quic", "net", "metric", Some(1), false, false)?;
-    builder.add_object("quic_conn_pool", "net")?;
-    builder.add_object("quic_stream_pool", "net")?;
+    builder.add_object("quic_conn", "net")?;
+    builder.add_object("quic_stream", "net")?;
     println!("   >> ✓ quic (cpuid=1)");
 
     for i in 0..2 {
         builder.add_tile("verify", "pack", "metric", Some(2 + i), false, false)?;
-        builder.add_object(&format!("verify_ctx_{}", i), "pack")?;
+        builder.add_object(&format!("verify_{}", i), "pack")?;
         println!("   >> ✓ verify {} (cpuid={})", i, 2 + i);
     }
 
     builder.add_tile("pack", "pack", "metric", Some(4), false, false)?;
-    builder.add_object("pack_pending_txns", "pack")?;
-    builder.add_object("pack_microblocks", "pack")?;
+    builder.add_object("pack_pending", "pack")?;
+    builder.add_object("pack_micro", "pack")?;
     println!("   >> ✓ pack (cpuid=4)");
 
     for i in 0..2 {
         builder.add_tile("bank", "bank", "metric", Some(5 + i), false, false)?;
-        builder.add_object(&format!("bank_accounts_{}", i), "bank")?;
-        builder.add_object(&format!("bank_programs_{}", i), "bank")?;
+        builder.add_object(&format!("bank_acc_{}", i), "bank")?;
+        builder.add_object(&format!("bank_prog_{}", i), "bank")?;
         println!("   >> ✓ bank {} (cpuid={})", i, 5 + i);
     }
 
     builder.add_tile("metric", "metric", "metric", Some(7), false, false)?;
-    builder.add_object("metric_data", "metric")?;
+    builder.add_object("metrd", "metric")?;
     println!("   >> ✓ metric (cpuid=7)");
 
     Ok(())
