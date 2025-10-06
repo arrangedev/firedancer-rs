@@ -216,8 +216,15 @@ fn init_bindgen(
         builder = builder
             .clang_arg("-DFD_HAS_LINUX=1")
             .clang_arg("-DPATH_MAX=4096")
+            .clang_arg("-DFD_HAS_ALLOCA=1")
+            // Provide stub definitions for STEM template macros needed by fd_stem.h
+            .clang_arg("-DSTEM_BURST=1UL")
+            .clang_arg("-DSTEM_CALLBACK_CONTEXT_TYPE=void")
+            .clang_arg("-DSTEM_CALLBACK_CONTEXT_ALIGN=8UL")
             .clang_arg("-include")
-            .clang_arg("limits.h");
+            .clang_arg("limits.h")
+            .clang_arg("-include")
+            .clang_arg("alloca.h");
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -256,9 +263,13 @@ fn init_cc(
     {
         build
             .file(topo_path.join("fd_topo_run.c"))
-            .file(stem_path.join("fd_stem.c"))
             .define("FD_HAS_LINUX", "1")
-            .define("PATH_MAX", "4096");
+            .define("PATH_MAX", "4096")
+            .define("FD_HAS_ALLOCA", "1")
+            // Provide stub definitions for STEM template macros
+            .define("STEM_BURST", "1UL")
+            .define("STEM_CALLBACK_CONTEXT_TYPE", "void")
+            .define("STEM_CALLBACK_CONTEXT_ALIGN", "8UL");
     }
 
     #[cfg(not(target_os = "linux"))]
