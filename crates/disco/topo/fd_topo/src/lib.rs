@@ -317,7 +317,7 @@ mod tests {
 
     #[test]
     fn test_cpu_topology() {
-        let cpu_topo = CpuTopology::new().expect("Failed to get CPU topology");
+        let cpu_topo = CpuTopology::new_simple().expect("Failed to get CPU topology");
         assert!(cpu_topo.cpu_count() > 0, "Should have at least one CPU");
         assert!(
             cpu_topo.numa_node_count() > 0,

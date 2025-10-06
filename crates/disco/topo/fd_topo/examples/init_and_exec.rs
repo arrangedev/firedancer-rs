@@ -18,12 +18,12 @@ fn main() -> Result<()> {
         }
         _ => match CpuTopology::new_simple() {
             Ok(topo) => {
-                eprintln!("    >> ✓ cpu-topology found");
+                eprintln!("    >> ✓ cpu-topology found (simple)");
                 topo
             }
-            Err(e2) => {
+            Err(_) => {
                 let topo = CpuTopology::new_custom(6, 1)?;
-                eprintln!("    >> ✓ cpu-topology configured");
+                eprintln!("    >> ✓ cpu-topology configured (fallback)");
                 topo
             }
         },
@@ -72,7 +72,7 @@ fn main() -> Result<()> {
 }
 
 fn create_workspaces(builder: &mut TopoBuilder) -> Result<()> {
-    println!("Creating workspaces...");
+    println!("   > creating workspaces");
 
     builder.add_workspace("net")?;
     println!("   >> ✓ net_wksp");
@@ -83,8 +83,8 @@ fn create_workspaces(builder: &mut TopoBuilder) -> Result<()> {
     builder.add_workspace("bank")?;
     println!("   >> ✓ bank_wksp");
 
-    builder.add_workspace("metrics")?;
-    println!("   >> ✓ metrics_wksp");
+    builder.add_workspace("metric")?;
+    println!("   >> ✓ metric_wksp");
 
     Ok(())
 }
@@ -104,8 +104,8 @@ fn create_links(builder: &mut TopoBuilder) -> Result<()> {
     builder.add_link("pack_bank", "bank", 512, 4096, 8)?;
     println!("   >> ✓ link: pack_bank (depth: 512, mtu: 4096)");
 
-    builder.add_link("metrics_collect", "metrics", 256, 512, 4)?;
-    println!("   >> ✓ link: metrics_collect (depth: 256, mtu: 512)");
+    builder.add_link("metric", "metric", 256, 512, 4)?;
+    println!("   >> ✓ link: metric_collect (depth: 256, mtu: 512)");
 
     Ok(())
 }
@@ -113,37 +113,37 @@ fn create_links(builder: &mut TopoBuilder) -> Result<()> {
 fn create_tiles(builder: &mut TopoBuilder) -> Result<()> {
     println!("   > creating tiles");
 
-    builder.add_tile("net", "net", "metrics", Some(0), false, false)?;
+    builder.add_tile("net", "net", "metric", Some(0), false, false)?;
     builder.add_object("net_rx_buffer", "net")?;
     builder.add_object("net_tx_buffer", "net")?;
     println!("   >> ✓ net (cpuid=0)");
 
-    builder.add_tile("quic", "net", "metrics", Some(1), false, false)?;
+    builder.add_tile("quic", "net", "metric", Some(1), false, false)?;
     builder.add_object("quic_conn_pool", "net")?;
     builder.add_object("quic_stream_pool", "net")?;
     println!("   >> ✓ quic (cpuid=1)");
 
     for i in 0..2 {
-        builder.add_tile("verify", "pack", "metrics", Some(2 + i), false, false)?;
+        builder.add_tile("verify", "pack", "metric", Some(2 + i), false, false)?;
         builder.add_object(&format!("verify_ctx_{}", i), "pack")?;
         println!("   >> ✓ verify {} (cpuid={})", i, 2 + i);
     }
 
-    builder.add_tile("pack", "pack", "metrics", Some(4), false, false)?;
+    builder.add_tile("pack", "pack", "metric", Some(4), false, false)?;
     builder.add_object("pack_pending_txns", "pack")?;
     builder.add_object("pack_microblocks", "pack")?;
     println!("   >> ✓ pack (cpuid=4)");
 
     for i in 0..2 {
-        builder.add_tile("bank", "bank", "metrics", Some(5 + i), false, false)?;
+        builder.add_tile("bank", "bank", "metric", Some(5 + i), false, false)?;
         builder.add_object(&format!("bank_accounts_{}", i), "bank")?;
         builder.add_object(&format!("bank_programs_{}", i), "bank")?;
         println!("   >> ✓ bank {} (cpuid={})", i, 5 + i);
     }
 
-    builder.add_tile("metrics", "metrics", "metrics", Some(7), false, false)?;
-    builder.add_object("metrics_data", "metrics")?;
-    println!("   >> ✓ metrics (cpuid=7)");
+    builder.add_tile("metric", "metric", "metric", Some(7), false, false)?;
+    builder.add_object("metric_data", "metric")?;
+    println!("   >> ✓ metric (cpuid=7)");
 
     Ok(())
 }
@@ -169,10 +169,10 @@ fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
 
     let tile_names = ["net", "quic", "verify", "pack", "bank"];
     for tile_name in &tile_names {
-        builder.add_tile_output(tile_name, 0, "metrics_collect", 0)?;
+        builder.add_tile_output(tile_name, 0, "metric", 0)?;
     }
 
-    builder.add_tile_input("metrics", 0, "metrics", "metrics_collect", 0, false, true)?;
+    builder.add_tile_input("metric", 0, "metric", "metric", 0, false, true)?;
 
     println!("   >> ✓ topology wired");
     Ok(())

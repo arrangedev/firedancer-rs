@@ -109,7 +109,7 @@ impl CpuTopology {
 
 impl Default for CpuTopology {
     fn default() -> Self {
-        Self::new().expect("Failed to initialize CPU topology")
+        Self::new_simple().expect("Failed to initialize CPU topology")
     }
 }
 
