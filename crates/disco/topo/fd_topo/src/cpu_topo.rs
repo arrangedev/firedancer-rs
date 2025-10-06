@@ -17,6 +17,12 @@ pub struct CpuTopology {
 
 impl CpuTopology {
     pub fn new() -> Result<Self> {
+        unsafe {
+            let mut argc = 0i32;
+            let mut argv: *mut *mut i8 = std::ptr::null_mut();
+            sys::fd_boot(&mut argc, &mut argv);
+        }
+
         let mut cpus = unsafe { core::mem::zeroed::<sys::fd_topo_cpus_t>() };
 
         unsafe {
@@ -66,6 +72,14 @@ impl CpuTopology {
     pub fn print(&mut self) {
         unsafe {
             sys::fd_topo_cpus_printf(&mut self.inner);
+        }
+    }
+}
+
+impl Drop for CpuTopology {
+    fn drop(&mut self) {
+        unsafe {
+            sys::fd_halt();
         }
     }
 }

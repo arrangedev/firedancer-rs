@@ -156,10 +156,12 @@ fn generate_header(
 #include "{}/fd_topo.h"
 #include "{}/fd_topob.h"
 #include "{}/fd_cpu_topo.h"
+#include "{}/fd_util.h"
 "#,
         topo_path.canonicalize().unwrap().display(),
         topo_path.canonicalize().unwrap().display(),
-        topo_path.canonicalize().unwrap().display()
+        topo_path.canonicalize().unwrap().display(),
+        util_path.canonicalize().unwrap().display()
     );
 
     #[cfg(target_os = "linux")]
@@ -203,6 +205,8 @@ fn init_bindgen(
         .allowlist_function("fd_topo_.*")
         .allowlist_function("fd_topob_.*")
         .allowlist_function("fd_cpu_topo_.*")
+        .allowlist_function("fd_boot")
+        .allowlist_function("fd_halt")
         .allowlist_type("fd_topo_.*")
         .allowlist_type("fd_topob_.*")
         .allowlist_type("fd_cpu_topo_.*")
@@ -279,6 +283,7 @@ fn init_cc(
             .file(util_path.join("pod/fd_pod.c"))
             .file(util_path.join("sandbox/fd_sandbox.c"))
             .file(util_path.join("fd_hash.c"))
+            .file(util_path.join("fd_util.c"))
             .file(util_path.join("tile/fd_tile.c"))
             .file(util_path.join("wksp/fd_wksp_helper.c"))
             .file(disco_path.join("metrics/fd_metrics.c"))
