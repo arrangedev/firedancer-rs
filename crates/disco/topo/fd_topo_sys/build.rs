@@ -157,11 +157,13 @@ fn generate_header(
 #include "{}/fd_topob.h"
 #include "{}/fd_cpu_topo.h"
 #include "{}/fd_util.h"
+#include "{}/fd_numa.h"
 "#,
         topo_path.canonicalize().unwrap().display(),
         topo_path.canonicalize().unwrap().display(),
         topo_path.canonicalize().unwrap().display(),
-        util_path.canonicalize().unwrap().display()
+        util_path.canonicalize().unwrap().display(),
+        util_path.join("shmem").canonicalize().unwrap().display()
     );
 
     #[cfg(target_os = "linux")]
@@ -205,6 +207,7 @@ fn init_bindgen(
         .allowlist_function("fd_topo_.*")
         .allowlist_function("fd_topob_.*")
         .allowlist_function("fd_cpu_topo_.*")
+        .allowlist_function("fd_numa_.*")
         .allowlist_function("fd_boot")
         .allowlist_function("fd_halt")
         .allowlist_type("fd_topo_.*")
@@ -381,7 +384,7 @@ fn cfg_x86_64(build: &mut cc::Build) {
             .define("FD_HAS_SSE", "0")
             .define("FD_HAS_AVX", "0")
             .define("FD_HAS_AVX512", "0");
-        println!("cargo:warning=Building with SIMD disabled (NO_SIMD=1)");
+        println!("cargo:warning=simd-disabled (NO_SIMD=1)");
     } else {
         build
             .define("FD_HAS_SSE", "1")

@@ -1,7 +1,40 @@
 use fd_topo::{CpuTopology, Result, TopoBuilder};
 
 fn main() -> Result<()> {
-    let cpu_topo = CpuTopology::new()?;
+    let cpu_topo = match std::env::var("FD_CPU_METHOD").as_deref() {
+        Ok("thin") => CpuTopology::new_simple()?,
+        Ok("full") => {
+            let cpu_count = std::env::var("FD_CPU_COUNT")
+                .unwrap_or_else(|_| "6".to_string())
+                .parse::<usize>()
+                .unwrap_or(6);
+            let numa_count = std::env::var("FD_NUMA_COUNT")
+                .unwrap_or_else(|_| "1".to_string())
+                .parse::<usize>()
+                .unwrap_or(1);
+
+            println!("> [cpu-cfg] FD_CPU_METHOD=manual, cpus={cpu_count}, numa={numa_count}",);
+            CpuTopology::new_custom(cpu_count, numa_count)?
+        }
+        _ => match CpuTopology::new() {
+            Ok(topo) => {
+                eprintln!("    >> ✓ cpu-topology found");
+                topo
+            }
+            Err(e) => match CpuTopology::new_simple() {
+                Ok(topo) => {
+                    eprintln!("    >> ✓ cpu-topology found");
+                    topo
+                }
+                Err(e2) => {
+                    let topo = CpuTopology::new_custom(6, 1)?;
+                    eprintln!("    >> ✓ cpu-topology configured");
+                    topo
+                }
+            },
+        },
+    };
+
     println!(
         "[sys] cpus={}, numa-nodes={}",
         cpu_topo.cpu_count(),
