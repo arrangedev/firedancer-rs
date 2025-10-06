@@ -284,6 +284,7 @@ fn init_cc(
             .file(util_path.join("sandbox/fd_sandbox.c"))
             .file(util_path.join("fd_hash.c"))
             .file(util_path.join("fd_util.c"))
+            .file(util_path.join("env/fd_env.c"))
             .file(util_path.join("tile/fd_tile.c"))
             .file(util_path.join("wksp/fd_wksp_helper.c"))
             .file(disco_path.join("metrics/fd_metrics.c"))
