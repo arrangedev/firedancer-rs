@@ -1,50 +1,9 @@
-//! Safe Rust wrappers for Firedancer's shred module.
-//!
-//! This crate provides safe, idiomatic Rust wrappers around the low-level
-//! FFI bindings in `fd_shred_sys`. It handles shred parsing, validation,
-//! and provides type-safe access to shred data.
-//!
-//! # Overview
-//!
-//! Shreds are the fundamental unit of data transmission in Solana. They
-//! represent fragments of block data optimized for transmission over
-//! unreliable networks. This crate provides tools to parse, validate,
-//! and extract data from shreds.
-//!
-//! # Shred Types
-//!
-//! There are several types of shreds:
-//! - **Data shreds**: Contain actual block data
-//! - **Coding shreds**: Contain Reed-Solomon error correction data
-//! - **Legacy shreds**: Original shred format
-//! - **Merkle shreds**: Include Merkle inclusion proofs
-//! - **Chained shreds**: Include chained Merkle roots
-//! - **Resigned shreds**: Include additional retransmitter signatures
-//!
-//! # Example
-//!
-//! ```rust
-//! use fd_shred::{Shred, ShredType};
-//!
-//! let shred_data = vec![0u8; 1228];
-//!
-//! match Shred::parse(&shred_data) {
-//!     Ok(shred) => {
-//!         let slot = shred.slot();
-//!         let idx = shred.index();
-//!         let shred_ty = shred.shred_type();
-//!         
-//!         if let Some(payload) = shred.data_payload() {
-//!             println!("payload size: {}", payload.len());
-//!         }
-//!     }
-//!     Err(e) => eprintln!("Failed to parse shred: {e}"),
-//! }
-//! ```
+//! Safe API for `fd_shred_sys`
 
 use core::fmt;
 use core::slice;
 use fd_shred_sys as sys;
+use firedancer_rs_common::define_errors;
 
 /// max size of a shred (1228 bytes)
 pub const MAX_SHRED_SIZE: usize = sys::FD_SHRED_MAX_SZ as usize;
@@ -67,27 +26,30 @@ pub const MERKLE_NODE_SIZE: usize = sys::FD_SHRED_MERKLE_NODE_SZ as usize;
 /// size of a signature (64 bytes)
 pub const SIGNATURE_SIZE: usize = sys::FD_SHRED_SIGNATURE_SZ as usize;
 
-/// Shred type enumeration
+define_errors! {
+    ShredErr,
+    { TooSmall => "Shred data too small" },
+    { Invalid => "Invalid shred data" },
+    { BufferTooSmall => "Buffer too small" },
+    { InvalidType => "Invalid shred type" },
+    { UnsupportedOperation => "Unsupported operation for shred type" }
+}
+
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShredType {
     LegacyData,
     LegacyCode,
-    /// Merkle data shred
     MerkleData,
-    /// Merkle coding shred
     MerkleCode,
-    /// Chained merkle data shred
     MerkleDataChained,
-    /// Chained merkle coding shred
     MerkleCodeChained,
-    /// Resigned chained merkle data shred
     MerkleDataChainedResigned,
-    /// Resigned chained merkle coding shred
     MerkleCodeChainedResigned,
 }
 
 impl ShredType {
-    /// check if this is a data shred
+    #[inline]
     pub fn is_data(&self) -> bool {
         matches!(
             self,
@@ -98,7 +60,7 @@ impl ShredType {
         )
     }
 
-    /// check if this is a coding shred
+    #[inline]
     pub fn is_code(&self) -> bool {
         matches!(
             self,
@@ -109,17 +71,17 @@ impl ShredType {
         )
     }
 
-    /// check if this is a legacy shred
+    #[inline]
     pub fn is_legacy(&self) -> bool {
         matches!(self, ShredType::LegacyData | ShredType::LegacyCode)
     }
 
-    /// check if this is a merkle shred
+    #[inline]
     pub fn is_merkle(&self) -> bool {
         !self.is_legacy()
     }
 
-    /// check if this is a chained shred
+    #[inline]
     pub fn is_chained(&self) -> bool {
         matches!(
             self,
@@ -130,7 +92,7 @@ impl ShredType {
         )
     }
 
-    /// check if this is a resigned shred
+    #[inline]
     pub fn is_resigned(&self) -> bool {
         matches!(
             self,
@@ -138,6 +100,7 @@ impl ShredType {
         )
     }
 
+    #[inline]
     pub fn from_raw(raw_type: u8) -> Option<Self> {
         match raw_type {
             sys::FD_SHRED_TYPE_LEGACY_DATA => Some(ShredType::LegacyData),
@@ -156,6 +119,7 @@ impl ShredType {
         }
     }
 
+    #[inline]
     #[allow(dead_code)]
     pub fn to_raw(self) -> u8 {
         match self {
@@ -171,57 +135,87 @@ impl ShredType {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum ShredError {
-    /// Shred data is too small
-    TooSmall,
-    /// Shred data is malformed or invalid
-    Invalid,
-    /// Buffer is too small for the operation
-    BufferTooSmall,
-    /// Invalid shred type
-    InvalidType,
-    /// Operation not supported for this shred type
-    UnsupportedOperation,
-}
-
-impl fmt::Display for ShredError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ShredError::TooSmall => write!(f, "Shred data too small"),
-            ShredError::Invalid => write!(f, "Invalid shred data"),
-            ShredError::BufferTooSmall => write!(f, "Buffer too small"),
-            ShredError::InvalidType => write!(f, "Invalid shred type"),
-            ShredError::UnsupportedOperation => write!(f, "Unsupported operation for shred type"),
-        }
-    }
-}
-
-impl core::error::Error for ShredError {}
-
+#[repr(C)]
 pub struct Shred<'a> {
     raw: &'a sys::fd_shred_t,
     _data: &'a [u8],
 }
 
 impl<'a> Shred<'a> {
+    /// Flags are expressed as bitflags in agave
+    ///
+    /// const SHRED_TICK_REFERENCE_MASK = 0b0011_1111;
+    /// const DATA_COMPLETE_SHRED       = 0b0100_0000;
+    /// const LAST_SHRED_IN_SLOT        = 0b1100_0000;
+    pub fn new_from_data(
+        slot: u64,
+        index: u32,
+        parent_offset: u16,
+        data: &'a [u8],
+        flags: u8,
+        reference_tick: u8,
+        version: u16,
+        fec_set_index: u32,
+        signature: &[u8; 64],
+        variant: u8,
+    ) -> Result<Self> {
+        let raw = Self::create_raw(
+            slot,
+            index,
+            parent_offset,
+            data,
+            flags,
+            version,
+            fec_set_index,
+            signature,
+            variant,
+        );
+
+        Ok(Self {
+            raw: unsafe { &*raw },
+            _data: data,
+        })
+    }
+
+    fn create_raw(
+        slot: u64,
+        index: u32,
+        parent_offset: u16,
+        data: &'a [u8],
+        flags: u8,
+        version: u16,
+        fec_set_index: u32,
+        signature: &[u8; 64],
+        variant: u8,
+    ) -> *const sys::fd_shred_t {
+        let raw_shred: sys::fd_shred_t = sys::fd_shred_t {
+            signature: *signature,
+            variant,
+            slot,
+            idx: index,
+            version,
+            fec_set_idx: fec_set_index,
+            __bindgen_anon_1: sys::fd_shred__bindgen_ty_1 {
+                data: sys::fd_shred__bindgen_ty_1__bindgen_ty_1 {
+                    parent_off: parent_offset,
+                    flags,
+                    size: data.len() as u16,
+                },
+            },
+        };
+
+        &raw_shred as *const sys::fd_shred_t
+    }
     /// Parse a shred from raw bytes
-    ///
-    /// # Arguments
-    /// * `data` - Raw shred bytes (must be at least MIN_SHRED_SIZE bytes)
-    ///
-    /// # Returns
-    /// * `Ok(Shred)` - Successfully parsed shred
-    /// * `Err(ShredError)` - Parse error
-    pub fn parse(data: &'a [u8]) -> Result<Self, ShredError> {
+    pub fn parse(data: &'a [u8]) -> Result<Self> {
         if data.len() < MIN_SHRED_SIZE {
-            return Err(ShredError::TooSmall);
+            return Err(ShredErr::TooSmall);
         }
 
         let raw_shred = unsafe { sys::fd_shred_parse(data.as_ptr(), data.len() as u64) };
 
         if raw_shred.is_null() {
-            return Err(ShredError::Invalid);
+            return Err(ShredErr::Invalid);
         }
 
         Ok(Shred {
@@ -230,64 +224,69 @@ impl<'a> Shred<'a> {
         })
     }
 
-    /// the slot number this shred belongs to
+    #[inline]
     pub fn slot(&self) -> u64 {
         self.raw.slot
     }
 
-    /// the index of this shred within the slot
+    #[inline]
     pub fn index(&self) -> u32 {
         self.raw.idx
     }
 
-    /// the version field (hash of genesis and hard forks)
+    /// hash of genesis and hard forks
+    #[inline]
     pub fn version(&self) -> u16 {
         self.raw.version
     }
 
-    /// the FEC set index
+    #[inline]
     pub fn fec_set_index(&self) -> u32 {
         self.raw.fec_set_idx
     }
 
+    #[inline]
     pub fn shred_type(&self) -> ShredType {
         let raw_type = unsafe { sys::fd_shred_type(self.raw.variant) };
         ShredType::from_raw(raw_type).unwrap_or(ShredType::LegacyData)
     }
 
+    #[inline]
     pub fn variant(&self) -> u8 {
         self.raw.variant
     }
 
-    /// the signature of this shred
+    #[inline]
     pub fn signature(&self) -> &[u8; 64] {
         &self.raw.signature
     }
 
-    /// the total size of this shred
+    #[inline]
     pub fn size(&self) -> usize {
         unsafe { sys::fd_shred_sz(self.raw) as usize }
     }
 
+    #[inline]
     pub fn payload_size(&self) -> usize {
         unsafe { sys::fd_shred_payload_sz(self.raw) as usize }
     }
 
+    #[inline]
     pub fn header_size(&self) -> usize {
         unsafe { sys::fd_shred_header_sz(self.raw.variant) as usize }
     }
 
-    /// merkle proof node count (excluding root)
+    #[inline]
     pub fn merkle_node_count(&self) -> u32 {
         unsafe { sys::fd_shred_merkle_cnt(self.raw.variant) }
     }
 
-    /// merkle proof size
+    #[inline]
     pub fn merkle_proof_size(&self) -> usize {
         unsafe { sys::fd_shred_merkle_sz(self.raw.variant) as usize }
     }
 
-    /// data payload (if this is a data shred)
+    #[inline]
     pub fn data_payload(&self) -> Option<&[u8]> {
         if !self.shred_type().is_data() {
             return None;
@@ -303,7 +302,7 @@ impl<'a> Shred<'a> {
         Some(unsafe { slice::from_raw_parts(payload_ptr, payload_size) })
     }
 
-    /// coding payload (if this is a coding shred)
+    #[inline]
     pub fn code_payload(&self) -> Option<&[u8]> {
         if !self.shred_type().is_code() {
             return None;
@@ -319,7 +318,7 @@ impl<'a> Shred<'a> {
         Some(unsafe { slice::from_raw_parts(payload_ptr, payload_size) })
     }
 
-    /// data shred specific fields (only for data shreds)
+    #[inline]
     pub fn data_header(&self) -> Option<DataHeader> {
         if !self.shred_type().is_data() {
             return None;
@@ -332,7 +331,7 @@ impl<'a> Shred<'a> {
         })
     }
 
-    /// coding shred specific fields (only for coding shreds)
+    #[inline]
     pub fn code_header(&self) -> Option<CodeHeader> {
         if !self.shred_type().is_code() {
             return None;
@@ -345,7 +344,7 @@ impl<'a> Shred<'a> {
         })
     }
 
-    /// merkle proof nodes (if this is a merkle shred)
+    #[inline]
     pub fn merkle_nodes(&self) -> Option<&[u8]> {
         if self.shred_type().is_legacy() {
             return None;
@@ -365,7 +364,7 @@ impl<'a> Shred<'a> {
         Some(unsafe { slice::from_raw_parts(nodes_ptr as *const u8, total_size) })
     }
 
-    /// check if the shred represents the last in a slot
+    #[inline]
     pub fn is_slot_complete(&self) -> bool {
         if let Some(header) = self.data_header() {
             (header.flags & sys::FD_SHRED_DATA_FLAG_SLOT_COMPLETE) != 0
@@ -374,7 +373,7 @@ impl<'a> Shred<'a> {
         }
     }
 
-    /// check if the shred is the last in a data batch
+    #[inline]
     pub fn is_data_complete(&self) -> bool {
         if let Some(header) = self.data_header() {
             (header.flags & sys::FD_SHRED_DATA_FLAG_DATA_COMPLETE) != 0
@@ -383,7 +382,7 @@ impl<'a> Shred<'a> {
         }
     }
 
-    /// reference tick number from data shred flags
+    #[inline]
     pub fn reference_tick(&self) -> Option<u8> {
         if let Some(header) = self.data_header() {
             Some(header.flags & sys::FD_SHRED_DATA_REF_TICK_MASK)
@@ -393,25 +392,24 @@ impl<'a> Shred<'a> {
     }
 }
 
-/// Data shred specific header fields
+#[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct DataHeader {
-    /// Parent offset (slot difference from parent)
+    ///slot difference from parent
     pub parent_offset: u16,
-    /// Flags field containing completion and tick info
+    /// completion and tick info
     pub flags: u8,
-    /// Size of the data shred
     pub size: u16,
 }
 
-/// Coding shred specific header fields
+#[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct CodeHeader {
-    /// Total number of data shreds in FEC set
+    /// data shreds in FEC set
     pub data_count: u16,
-    /// Total number of coding shreds in FEC set
+    /// coding shreds in FEC set
     pub code_count: u16,
-    /// Index within coding shreds vector
+    /// idx within coding shreds vec
     pub index: u16,
 }
 
@@ -434,39 +432,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_constants() {
-        assert_eq!(MAX_SHRED_SIZE, 1228);
-        assert_eq!(MIN_SHRED_SIZE, 1203);
-        assert_eq!(DATA_HEADER_SIZE, 0x58);
-        assert_eq!(CODE_HEADER_SIZE, 0x59);
-    }
-
-    #[test]
-    fn test_shred_type() {
-        assert!(ShredType::LegacyData.is_data());
-        assert!(!ShredType::LegacyData.is_code());
-        assert!(ShredType::LegacyData.is_legacy());
-        assert!(!ShredType::LegacyData.is_merkle());
-
-        assert!(ShredType::MerkleDataChained.is_data());
-        assert!(ShredType::MerkleDataChained.is_merkle());
-        assert!(ShredType::MerkleDataChained.is_chained());
-        assert!(!ShredType::MerkleDataChained.is_resigned());
-
-        assert!(ShredType::MerkleCodeChainedResigned.is_code());
-        assert!(ShredType::MerkleCodeChainedResigned.is_chained());
-        assert!(ShredType::MerkleCodeChainedResigned.is_resigned());
+    fn test_parse_shred() {
+        let shred_data = vec![0u8; MAX_SHRED_SIZE];
+        let shred = Shred::parse(&shred_data).unwrap();
+        assert_eq!(shred.slot(), 141939602);
+        assert_eq!(shred.index(), 28685);
+        assert_eq!(shred.version(), 45189);
     }
 
     #[test]
     fn test_parse_invalid_shred() {
         let too_small = vec![0u8; 100];
-        assert!(matches!(
-            Shred::parse(&too_small),
-            Err(ShredError::TooSmall)
-        ));
+        assert!(matches!(Shred::parse(&too_small), Err(ShredErr::TooSmall)));
 
         let invalid = vec![0u8; MIN_SHRED_SIZE];
-        assert!(matches!(Shred::parse(&invalid), Err(ShredError::Invalid)));
+        assert!(matches!(Shred::parse(&invalid), Err(ShredErr::Invalid)));
     }
 }

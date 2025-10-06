@@ -1,10 +1,10 @@
 [package]
-name = "fd_shred"
+name = "fd_cirq"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-fd_shred_sys = { path = "../fd_shred_sys" }
 firedancer-rs-common = { path = "../../../common" }
+fd_cirq_sys = { path = "../fd_cirq_sys" }
 
 [dev-dependencies]

@@ -4,6 +4,7 @@ use core::ffi::c_void;
 use core::fmt;
 use core::mem::MaybeUninit;
 use fd_ed25519_sys as sys;
+use firedancer_rs_common::define_errors;
 
 pub const PUBKEY_BYTES: usize = 32;
 pub const SIGNATURE_BYTES: usize = 64;
@@ -19,41 +20,25 @@ pub const MAX_SEED_LEN: usize = 32;
 pub const MAX_SEEDS: usize = 16;
 const PDA_MARKER: &[u8; 21] = b"ProgramDerivedAddress";
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Ed25519Error {
-    InvalidSignature(&'static str),
-    InvalidPublicKey(&'static str),
-    VerificationFailed,
-    InvalidInput(&'static str),
-    CryptoError(&'static str),
-    DerivationFailed,
-    MaxSeedLengthExceeded,
-    KeyExchangeFailed,
+define_errors! {
+    Ed25519Err,
+    { TooSmall => "Shred data too small" },
+    { InvalidPublicKey => "Invalid public key" },
+    { InvalidSignature => "Invalid signature" },
+    { VerificationFailed => "Signature verification failed" },
+    { InvalidInput => "Invalid input" },
+    { CryptoError => "Cryptographic error" },
+    { DerivationFailed => "Program address derivation failed" },
+    { MaxSeedLengthExceeded => "Maximum seed length exceeded" },
+    { KeyExchangeFailed => "X25519 key exchange failed" },
 }
 
-impl fmt::Display for Ed25519Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Ed25519Error::InvalidSignature(msg) => write!(f, "Invalid signature: {}", msg),
-            Ed25519Error::InvalidPublicKey(msg) => write!(f, "Invalid public key: {}", msg),
-            Ed25519Error::VerificationFailed => write!(f, "Signature verification failed"),
-            Ed25519Error::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
-            Ed25519Error::CryptoError(msg) => write!(f, "Cryptographic error: {}", msg),
-            Ed25519Error::KeyExchangeFailed => write!(f, "X25519 key exchange failed"),
-            Ed25519Error::DerivationFailed => write!(f, "Program address derivation failed"),
-            Ed25519Error::MaxSeedLengthExceeded => write!(f, "Maximum seed length exceeded"),
-        }
-    }
-}
-
-impl core::error::Error for Ed25519Error {}
-
-fn convert_ed25519_error(code: i32) -> Ed25519Error {
+fn convert_ed25519_error(code: i32) -> Ed25519Err {
     match code {
-        sys::FD_ED25519_ERR_SIG => Ed25519Error::InvalidSignature("Invalid signature format"),
-        sys::FD_ED25519_ERR_PUBKEY => Ed25519Error::InvalidPublicKey("Invalid public key format"),
-        sys::FD_ED25519_ERR_MSG => Ed25519Error::VerificationFailed,
-        _ => Ed25519Error::CryptoError("Unknown error occurred"),
+        sys::FD_ED25519_ERR_SIG => Ed25519Err::InvalidSignature,
+        sys::FD_ED25519_ERR_PUBKEY => Ed25519Err::InvalidPublicKey,
+        sys::FD_ED25519_ERR_MSG => Ed25519Err::VerificationFailed,
+        _ => Ed25519Err::CryptoError,
     }
 }
 
@@ -78,7 +63,7 @@ fn bytes_are_curve_point(bytes: [u8; 32]) -> bool {
 pub struct Pubkey([u8; ED25519_PUBLIC_KEY_SIZE]);
 
 impl Pubkey {
-    pub fn from_bytes(bytes: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Result<Self, Ed25519Error> {
+    pub fn from_bytes(bytes: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Result<Self> {
         Ok(unsafe { Self::from_bytes_unchecked(bytes) })
     }
 
@@ -101,12 +86,10 @@ impl Pubkey {
         crate::hex::encode(&self.0)
     }
 
-    pub fn from_hex(hex_str: &str) -> Result<Self, Ed25519Error> {
+    pub fn from_hex(hex_str: &str) -> Result<Self> {
         let bytes = crate::hex::decode(hex_str)?;
         if bytes.len() != ED25519_PUBLIC_KEY_SIZE {
-            return Err(Ed25519Error::InvalidInput(
-                "Invalid hex length for public key",
-            ));
+            return Err(Ed25519Err::InvalidInput);
         }
         let mut key_bytes = [0u8; ED25519_PUBLIC_KEY_SIZE];
         key_bytes.copy_from_slice(&bytes);
@@ -119,7 +102,7 @@ impl Pubkey {
     }
 
     #[cfg(feature = "base58")]
-    pub fn from_base58(encoded: &str) -> Result<Self, Ed25519Error> {
+    pub fn from_base58(encoded: &str) -> Result<Self> {
         let bytes = crate::base58::decode_32(encoded)?;
         Ok(Self(bytes))
     }
@@ -134,10 +117,7 @@ impl Pubkey {
     /// Program Derived Addresses are not valid Ed25519 public keys, so this function
     /// guarantees to find an address off-curve by appending a "bump" seed, and iterating downward
     /// from `u8::MAX` until an off-curve address is found.
-    pub fn find_program_address(
-        seeds: &[&[u8]],
-        program_id: &Pubkey,
-    ) -> Result<(Pubkey, u8), Ed25519Error> {
+    pub fn find_program_address(seeds: &[&[u8]], program_id: &Pubkey) -> Result<(Pubkey, u8)> {
         let mut bump_seed = [u8::MAX];
         for _ in 0..u8::MAX {
             {
@@ -145,13 +125,13 @@ impl Pubkey {
                 seeds_with_bump.push(&bump_seed);
                 match Self::create_program_address(&seeds_with_bump, program_id) {
                     Ok(address) => return Ok((address, bump_seed[0])),
-                    Err(Ed25519Error::InvalidInput(_)) => (),
+                    Err(Ed25519Err::InvalidInput) => (),
                     Err(e) => return Err(e),
                 }
             }
             bump_seed[0] -= 1;
         }
-        Err(Ed25519Error::DerivationFailed)
+        Err(Ed25519Err::DerivationFailed)
     }
 
     /// Create a program address with the given seeds and program ID. This is faster
@@ -159,16 +139,13 @@ impl Pubkey {
     /// the seeds & bump are valid with a single iteration.
     ///
     /// If this hasn't been precomputed, use `find_program_address` instead.
-    pub fn create_program_address(
-        seeds: &[&[u8]],
-        program_id: &Pubkey,
-    ) -> Result<Pubkey, Ed25519Error> {
+    pub fn create_program_address(seeds: &[&[u8]], program_id: &Pubkey) -> Result<Pubkey> {
         if seeds.len() > MAX_SEEDS {
-            return Err(Ed25519Error::MaxSeedLengthExceeded);
+            return Err(Ed25519Err::MaxSeedLengthExceeded);
         }
         for seed in seeds.iter() {
             if seed.len() > MAX_SEED_LEN {
-                return Err(Ed25519Error::MaxSeedLengthExceeded);
+                return Err(Ed25519Err::MaxSeedLengthExceeded);
             }
         }
 
@@ -197,7 +174,7 @@ impl Pubkey {
             sys::fd_sha256_fini(&mut sha, hash.as_mut_ptr() as *mut c_void);
 
             if bytes_are_curve_point(hash) {
-                return Err(Ed25519Error::InvalidInput("Provided seeds are invalid"));
+                return Err(Ed25519Err::InvalidInput);
             }
 
             Ok(Pubkey::from(hash))
@@ -209,7 +186,7 @@ impl Pubkey {
     pub fn create_program_address_unchecked(
         seeds: &[&[u8]],
         program_id: &Pubkey,
-    ) -> Result<Pubkey, Ed25519Error> {
+    ) -> Result<Pubkey> {
         unsafe {
             let mut sha = MaybeUninit::<sys::fd_sha256_t>::uninit();
             sys::fd_sha256_init(sha.as_mut_ptr());
@@ -235,14 +212,14 @@ impl Pubkey {
             sys::fd_sha256_fini(&mut sha, hash.as_mut_ptr() as *mut c_void);
 
             if bytes_are_curve_point(hash) {
-                return Err(Ed25519Error::InvalidInput("Provided seeds are invalid"));
+                return Err(Ed25519Err::InvalidInput);
             }
 
             Ok(Pubkey::from(hash))
         }
     }
 
-    pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<bool, Ed25519Error> {
+    pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<bool> {
         unsafe {
             let mut sha = MaybeUninit::<sys::fd_sha512_t>::uninit();
             sys::fd_sha512_init(sha.as_mut_ptr());
@@ -304,7 +281,7 @@ impl fmt::Debug for Pubkey {
 pub struct Signature([u8; ED25519_SIGNATURE_SIZE]);
 
 impl Signature {
-    pub fn from_bytes(bytes: &[u8; ED25519_SIGNATURE_SIZE]) -> Result<Self, Ed25519Error> {
+    pub fn from_bytes(bytes: &[u8; ED25519_SIGNATURE_SIZE]) -> Result<Self> {
         Ok(Self(*bytes))
     }
 
@@ -316,12 +293,10 @@ impl Signature {
         hex::encode(&self.0)
     }
 
-    pub fn from_hex(hex_str: &str) -> Result<Self, Ed25519Error> {
+    pub fn from_hex(hex_str: &str) -> Result<Self> {
         let bytes = hex::decode(hex_str)?;
         if bytes.len() != ED25519_SIGNATURE_SIZE {
-            return Err(Ed25519Error::InvalidInput(
-                "Invalid hex length for signature",
-            ));
+            return Err(Ed25519Err::InvalidInput);
         }
         let mut sig_bytes = [0u8; ED25519_SIGNATURE_SIZE];
         sig_bytes.copy_from_slice(&bytes);
@@ -334,7 +309,7 @@ impl Signature {
     }
 
     #[cfg(feature = "base58")]
-    pub fn from_base58(encoded: &str) -> Result<Self, Ed25519Error> {
+    pub fn from_base58(encoded: &str) -> Result<Self> {
         let bytes = base58::decode_64(encoded)?;
         Ok(Self(bytes))
     }
@@ -373,9 +348,7 @@ impl From<&[u8]> for Signature {
 pub struct Keypair([u8; ED25519_PRIVATE_KEY_SIZE], Pubkey);
 
 impl Keypair {
-    pub fn from_secret_key(
-        secret_key: &[u8; ED25519_PRIVATE_KEY_SIZE],
-    ) -> Result<Self, Ed25519Error> {
+    pub fn from_secret_key(secret_key: &[u8; ED25519_PRIVATE_KEY_SIZE]) -> Result<Self> {
         unsafe {
             let mut sha = MaybeUninit::<sys::fd_sha512_t>::uninit();
             sys::fd_sha512_init(sha.as_mut_ptr());
@@ -388,7 +361,7 @@ impl Keypair {
             );
 
             if result.is_null() {
-                return Err(Ed25519Error::CryptoError("Failed to derive public key"));
+                return Err(Ed25519Err::CryptoError);
             }
 
             Ok(Self(*secret_key, Pubkey(pubkey_bytes)))
@@ -403,7 +376,7 @@ impl Keypair {
         &self.0
     }
 
-    pub fn sign(&self, message: &[u8]) -> Result<Signature, Ed25519Error> {
+    pub fn sign(&self, message: &[u8]) -> Result<Signature> {
         unsafe {
             let mut sha = MaybeUninit::<sys::fd_sha512_t>::uninit();
             sys::fd_sha512_init(sha.as_mut_ptr());
@@ -420,7 +393,7 @@ impl Keypair {
             );
 
             if result.is_null() {
-                return Err(Ed25519Error::CryptoError("Failed to sign message"));
+                return Err(Ed25519Err::CryptoError);
             }
 
             Ok(Signature(signature_bytes))
@@ -455,11 +428,9 @@ pub fn batch_verify_single_message(
     message: &[u8],
     pubkeys: &[Pubkey],
     signatures: &[Signature],
-) -> Result<bool, Ed25519Error> {
+) -> Result<bool> {
     if pubkeys.len() != signatures.len() {
-        return Err(Ed25519Error::InvalidInput(
-            "Number of public keys must match number of signatures",
-        ));
+        return Err(Ed25519Err::InvalidInput);
     }
 
     if pubkeys.is_empty() {
@@ -511,7 +482,7 @@ pub fn batch_verify_single_message(
 pub struct X25519PrivateKey([u8; X25519_PRIVATE_KEY_SIZE]);
 
 impl X25519PrivateKey {
-    pub fn from_bytes(bytes: &[u8; X25519_PRIVATE_KEY_SIZE]) -> Result<Self, Ed25519Error> {
+    pub fn from_bytes(bytes: &[u8; X25519_PRIVATE_KEY_SIZE]) -> Result<Self> {
         Ok(Self(*bytes))
     }
 
@@ -523,10 +494,7 @@ impl X25519PrivateKey {
         }
     }
 
-    pub fn exchange(
-        &self,
-        peer_pubkey: &X25519PublicKey,
-    ) -> Result<X25519SharedSecret, Ed25519Error> {
+    pub fn exchange(&self, peer_pubkey: &X25519PublicKey) -> Result<X25519SharedSecret> {
         unsafe {
             let mut shared_secret_bytes = [0u8; X25519_SHARED_SECRET_SIZE];
             let result = sys::fd_x25519_exchange(
@@ -536,7 +504,7 @@ impl X25519PrivateKey {
             );
 
             if result.is_null() {
-                return Err(Ed25519Error::KeyExchangeFailed);
+                return Err(Ed25519Err::KeyExchangeFailed);
             }
 
             Ok(X25519SharedSecret(shared_secret_bytes))
@@ -573,7 +541,7 @@ impl From<[u8; X25519_PRIVATE_KEY_SIZE]> for X25519PrivateKey {
 pub struct X25519PublicKey([u8; X25519_PUBLIC_KEY_SIZE]);
 
 impl X25519PublicKey {
-    pub fn from_bytes(bytes: &[u8; X25519_PUBLIC_KEY_SIZE]) -> Result<Self, Ed25519Error> {
+    pub fn from_bytes(bytes: &[u8; X25519_PUBLIC_KEY_SIZE]) -> Result<Self> {
         Ok(Self(*bytes))
     }
 
@@ -631,7 +599,7 @@ impl From<[u8; X25519_SHARED_SECRET_SIZE]> for X25519SharedSecret {
 
 #[cfg(feature = "base58")]
 pub mod base58 {
-    use crate::Ed25519Error;
+    use crate::Ed25519Err;
     use fd_ed25519_sys as sys;
 
     pub const ENCODED_32_LEN: usize = sys::FD_BASE58_ENCODED_32_LEN as usize;
@@ -676,27 +644,25 @@ pub mod base58 {
         }
     }
 
-    pub fn decode_32(encoded: &str) -> Result<[u8; 32], Ed25519Error> {
+    pub fn decode_32(encoded: &str) -> crate::Result<[u8; 32]> {
         unsafe {
             let mut out = [0u8; 32];
-            let c_str = std::ffi::CString::new(encoded)
-                .map_err(|_| Ed25519Error::InvalidInput("Invalid base58 string"))?;
+            let c_str = std::ffi::CString::new(encoded).map_err(|_| Ed25519Err::InvalidInput)?;
             let result = sys::fd_base58_decode_32(c_str.as_ptr(), out.as_mut_ptr());
             if result.is_null() {
-                return Err(Ed25519Error::InvalidInput("Failed to decode base58"));
+                return Err(Ed25519Err::InvalidInput);
             }
             Ok(out)
         }
     }
 
-    pub fn decode_64(encoded: &str) -> Result<[u8; 64], Ed25519Error> {
+    pub fn decode_64(encoded: &str) -> crate::Result<[u8; 64]> {
         unsafe {
             let mut out = [0u8; 64];
-            let c_str = std::ffi::CString::new(encoded)
-                .map_err(|_| Ed25519Error::InvalidInput("Invalid base58 string"))?;
+            let c_str = std::ffi::CString::new(encoded).map_err(|_| Ed25519Err::InvalidInput)?;
             let result = sys::fd_base58_decode_64(c_str.as_ptr(), out.as_mut_ptr());
             if result.is_null() {
-                return Err(Ed25519Error::InvalidInput("Failed to decode base58"));
+                return Err(Ed25519Err::InvalidInput);
             }
             Ok(out)
         }
@@ -704,7 +670,7 @@ pub mod base58 {
 }
 
 pub mod hex {
-    use crate::Ed25519Error;
+    use crate::Ed25519Err;
     use fd_ed25519_sys as sys;
 
     pub fn encode(bytes: &[u8]) -> String {
@@ -724,19 +690,16 @@ pub mod hex {
         }
     }
 
-    pub fn decode(hex_str: &str) -> Result<Vec<u8>, Ed25519Error> {
+    pub fn decode(hex_str: &str) -> crate::Result<Vec<u8>> {
         if hex_str.len() % 2 != 0 {
-            return Err(Ed25519Error::InvalidInput(
-                "Hex string must have even length",
-            ));
+            return Err(Ed25519Err::InvalidInput);
         }
 
         let expected_len = hex_str.len() / 2;
         let mut out = vec![0u8; expected_len];
 
         unsafe {
-            let c_str = std::ffi::CString::new(hex_str)
-                .map_err(|_| Ed25519Error::InvalidInput("Invalid hex string"))?;
+            let c_str = std::ffi::CString::new(hex_str).map_err(|_| Ed25519Err::InvalidInput)?;
             let decoded_len = sys::fd_hex_decode(
                 out.as_mut_ptr() as *mut std::ffi::c_void,
                 c_str.as_ptr(),
@@ -744,7 +707,7 @@ pub mod hex {
             );
 
             if decoded_len != expected_len as u64 {
-                return Err(Ed25519Error::InvalidInput("Failed to decode hex string"));
+                return Err(Ed25519Err::InvalidInput);
             }
         }
 
@@ -800,7 +763,7 @@ mod tests {
             })
             .collect();
 
-        let signatures: Result<Vec<_>, _> = keypairs.iter().map(|kp| kp.sign(message)).collect();
+        let signatures: Result<Vec<_>> = keypairs.iter().map(|kp| kp.sign(message)).collect();
         let signatures = signatures.unwrap();
 
         let pubkeys: Vec<_> = keypairs.iter().map(|kp| kp.pubkey().clone()).collect();
@@ -851,7 +814,7 @@ mod tests {
         ];
 
         let result = batch_verify_single_message(message, &pubkeys, &signatures);
-        assert!(matches!(result, Err(Ed25519Error::InvalidInput(_))));
+        assert!(matches!(result, Err(Ed25519Err::InvalidInput)));
     }
 
     #[test]

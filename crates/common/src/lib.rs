@@ -720,3 +720,48 @@ macro_rules! indir_files {
         paths
     }};
 }
+
+/// Define simple errors for a given crate.
+///
+/// This is primarily for use in safe wrapper crates
+///
+/// example:
+///
+/// ```
+/// define_errors!(
+///     ShredErr,
+///     { TooSmall => "Shred data too small" },
+///     { Invalid => "Invalid shred data" },
+///     { BufferTooSmall => "Buffer too small" },
+///     { InvalidType => "Invalid shred type" },
+///     { UnsupportedOperation => "Unsupported operation for shred type" }
+/// );
+/// ```
+#[macro_export]
+macro_rules! define_errors {
+    (
+        $name:ident,
+        $( { $variant:ident => $msg:literal } ),* $(,)?
+    ) => {
+        pub type Result<T> = core::result::Result<T, $name>;
+
+        #[derive(Debug, Clone, PartialEq, Eq)]
+        pub enum $name {
+            $(
+                $variant,
+            )*
+        }
+
+        impl core::fmt::Display for $name {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                match self {
+                    $(
+                        Self::$variant => write!(f, $msg),
+                    )*
+                }
+            }
+        }
+
+        impl core::error::Error for $name {}
+    };
+}

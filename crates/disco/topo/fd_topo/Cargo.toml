@@ -1,0 +1,17 @@
+[package]
+name = "fd_topo"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_topo_sys = { path = "../fd_topo_sys" }
+firedancer-rs-common = { path = "../../../common" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[[example]]
+name = "init_and_exec"
+path = "examples/init_and_exec.rs"
+
+[dev-dependencies]

@@ -1,0 +1,15 @@
+[package]
+name = "fd_funk_sys"
+version.workspace = true
+edition.workspace = true
+build = "build.rs"
+links = "fdfunk"
+
+[dependencies]
+
+[build-dependencies]
+bindgen = { version = "0.72.1" }
+cc = "1.0"
+firedancer-rs-common = { path = "../../common" }
+
+[dev-dependencies]

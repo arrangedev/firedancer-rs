@@ -1,10 +1,15 @@
 [package]
-name = "fd_shred"
+name = "fd_cirq_sys"
 version.workspace = true
 edition.workspace = true
+build = "build.rs"
+links = "fdcirq"
 
 [dependencies]
-fd_shred_sys = { path = "../fd_shred_sys" }
+
+[build-dependencies]
+bindgen = { version = "0.72.1" }
+cc = "1.0"
 firedancer-rs-common = { path = "../../../common" }
 
 [dev-dependencies]

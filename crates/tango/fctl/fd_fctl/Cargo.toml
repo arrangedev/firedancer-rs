@@ -1,0 +1,9 @@
+[package]
+name = "fd_fctl"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_fctl_sys = { path = "../fd_fctl_sys" }
+
+[dev-dependencies]

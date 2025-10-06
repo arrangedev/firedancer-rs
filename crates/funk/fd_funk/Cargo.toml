@@ -1,0 +1,11 @@
+[package]
+name = "fd_funk"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_funk_sys = { path = "../fd_funk_sys" }
+firedancer-rs-common = { path = "../../common" }
+hex = "0.4"
+
+[dev-dependencies]

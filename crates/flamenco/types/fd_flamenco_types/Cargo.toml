@@ -1,0 +1,9 @@
+[package]
+name = "fd_flamenco_types"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_flamenco_types_sys = { path = "../fd_flamenco_types_sys" }
+
+[dev-dependencies]

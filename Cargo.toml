@@ -19,6 +19,8 @@ members = [
     "crates/tango/*/*",
     "crates/ballet/*/*",
     "crates/flamenco/*/*",
+    "crates/funk/*",
+    "crates/disco/*/*",
     "crates/composites/*",
     "crates/waltz/quic/*",
 ]
