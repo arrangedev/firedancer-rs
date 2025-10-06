@@ -67,7 +67,6 @@ fn setup_rerun(
     ballet_path: &PathBuf,
     util_path: &PathBuf,
 ) {
-    // Core topo files
     println!(
         "cargo:rerun-if-changed={}",
         topo_path.join("fd_topo.h").display()
@@ -93,7 +92,6 @@ fn setup_rerun(
         topo_path.join("fd_cpu_topo.c").display()
     );
 
-    // Only track fd_topo_run.c and stem files on Linux platforms
     #[cfg(target_os = "linux")]
     {
         println!(
@@ -110,25 +108,21 @@ fn setup_rerun(
         );
     }
 
-    // Tango dependencies
     println!(
         "cargo:rerun-if-changed={}",
         tango_path.join("fd_tango.h").display()
     );
 
-    // Waltz XDP dependencies
     println!(
         "cargo:rerun-if-changed={}",
         waltz_path.join("xdp").join("fd_xdp1.h").display()
     );
 
-    // Ballet base58 dependencies
     println!(
         "cargo:rerun-if-changed={}",
         ballet_path.join("base58").join("fd_base58.h").display()
     );
 
-    // Util dependencies
     println!(
         "cargo:rerun-if-changed={}",
         util_path.join("fd_util_base.h").display()
@@ -161,7 +155,6 @@ fn generate_header(
         topo_path.canonicalize().unwrap().display()
     );
 
-    // Only include stem on Linux platforms
     #[cfg(target_os = "linux")]
     {
         header_content.push_str(&format!(
@@ -219,7 +212,7 @@ fn init_bindgen(
             .clang_arg("-DFD_HAS_LINUX=1")
             .clang_arg("-DPATH_MAX=4096")
             .clang_arg("-DFD_HAS_ALLOCA=1")
-            // Provide stub definitions for STEM template macros needed by fd_stem.h
+            // stub defs for stem template macros // fd_stem.h
             .clang_arg("-DSTEM_BURST=1UL")
             .clang_arg("-DSTEM_CALLBACK_CONTEXT_TYPE=void")
             .clang_arg("-DSTEM_CALLBACK_CONTEXT_ALIGN=8UL")
@@ -260,15 +253,12 @@ fn init_cc(
         .flag("-std=c17")
         .flag("-O3")
         .flag("-fPIC")
-        .flag("-Wno-error=implicit-function-declaration")
-        .cpp(true)  // Enable C++ compilation for .cxx files
-        .flag_if_supported("-std=c++17");
+        .flag("-Wno-error=implicit-function-declaration");
 
     #[cfg(target_os = "linux")]
     {
         build
             .file(topo_path.join("fd_topo_run.c"))
-            // Add essential utility dependencies
             .file(util_path.join("log/fd_log.c"))
             .file(util_path.join("cstr/fd_cstr.c"))
             .file(util_path.join("io/fd_io.c"))
@@ -278,21 +268,50 @@ fn init_cc(
             .file(util_path.join("wksp/fd_wksp_admin.c"))
             .file(util_path.join("wksp/fd_wksp_user.c"))
             .file(util_path.join("pod/fd_pod.c"))
-            .file(util_path.join("tile/fd_tile_threads.cxx"))
             .file(util_path.join("sandbox/fd_sandbox.c"))
-            // Add metrics dependencies
             .file(disco_path.join("metrics/fd_metrics.c"))
-            // Add Tango IPC dependencies
             .file(tango_path.join("mcache/fd_mcache.c"))
             .file(tango_path.join("dcache/fd_dcache.c"))
             .file(tango_path.join("fseq/fd_fseq.c"))
             .define("FD_HAS_LINUX", "1")
             .define("PATH_MAX", "4096")
             .define("FD_HAS_ALLOCA", "1")
-            // Provide stub definitions for STEM template macros
+            // stub defs for STEM template macros
             .define("STEM_BURST", "1UL")
             .define("STEM_CALLBACK_CONTEXT_TYPE", "void")
             .define("STEM_CALLBACK_CONTEXT_ALIGN", "8UL");
+
+        let mut cpp_build = cc::Build::new();
+        cpp_build
+            .file(util_path.join("tile/fd_tile_threads.cxx"))
+            .include(vendor_path)
+            .include(util_path)
+            .define("FD_HAS_HOSTED", "1")
+            .define("FD_HAS_THREADS", "1")
+            .define("FD_LOG_STYLE", "0")
+            .define("FD_HAS_LINUX", "1")
+            .define("PATH_MAX", "4096")
+            .define("FD_HAS_ALLOCA", "1")
+            .define("_GNU_SOURCE", "1")
+            .define("FD_HAS_ATOMIC", "1")
+            .define("FD_TILE_MAX", "1024");
+
+        if target_info.is_x86_64() {
+            cpp_build
+                .define("FD_HAS_X86", "1")
+                .define("FD_HAS_SSE", "1")
+                .define("FD_HAS_AVX", "1");
+        } else if target_info.is_aarch64() {
+            cpp_build.define("FD_HAS_ARM", "1");
+        }
+
+        cpp_build
+            .cpp(true)
+            .flag("-std=c++17")
+            .flag("-O3")
+            .flag("-fPIC")
+            .flag("-Wno-error=implicit-function-declaration")
+            .compile("fdtopo_cpp");
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -351,7 +370,7 @@ fn cfg_aarch64(build: &mut cc::Build) {
 }
 
 fn cfg_catchall(_build: &mut cc::Build) {
-    // Use reference implementations for unsupported architectures
+    // ref impls
 }
 
 fn cfg_arm64_mac(build: &mut cc::Build) {
