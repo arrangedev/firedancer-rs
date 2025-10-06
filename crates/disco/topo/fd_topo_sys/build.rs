@@ -211,10 +211,13 @@ fn init_bindgen(
         .allowlist_recursively(true)
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
 
-    // Platform-specific defines
     #[cfg(target_os = "linux")]
     {
-        builder = builder.clang_arg("-DFD_HAS_LINUX=1");
+        builder = builder
+            .clang_arg("-DFD_HAS_LINUX=1")
+            .clang_arg("-DPATH_MAX=4096")
+            .clang_arg("-include")
+            .clang_arg("limits.h");
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -249,16 +252,15 @@ fn init_cc(
         .flag("-fPIC")
         .flag("-Wno-error=implicit-function-declaration");
 
-    // Only include Linux-specific files on Linux platforms
     #[cfg(target_os = "linux")]
     {
         build
             .file(topo_path.join("fd_topo_run.c"))
             .file(stem_path.join("fd_stem.c"))
-            .define("FD_HAS_LINUX", "1");
+            .define("FD_HAS_LINUX", "1")
+            .define("PATH_MAX", "4096");
     }
 
-    // On non-Linux platforms, don't define FD_HAS_LINUX and exclude stem
     #[cfg(not(target_os = "linux"))]
     {
         build.define("FD_HAS_LINUX", "0").file("src/stubs.c");
