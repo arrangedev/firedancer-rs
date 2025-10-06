@@ -55,6 +55,12 @@ fn main() {
         &vendor_path,
     );
 
+    #[cfg(target_os = "linux")]
+    {
+        let wrapper_path = generate_wrappers(&disco_path);
+        build.file(wrapper_path);
+    }
+
     spec_target(&target_info, &mut bindgen, &mut build, &topo_path);
 
     _pipeline_finalize(build, bindgen, "fdtopo", None);
@@ -252,6 +258,7 @@ fn init_cc(
         .define("FD_HAS_HOSTED", "1")
         .define("FD_HAS_THREADS", "1")
         .define("FD_LOG_STYLE", "0")
+        .define("FD_HAS_ATOMIC", "1")
         .flag("-std=c17")
         .flag("-O3")
         .flag("-fPIC")
@@ -271,6 +278,9 @@ fn init_cc(
             .file(util_path.join("wksp/fd_wksp_user.c"))
             .file(util_path.join("pod/fd_pod.c"))
             .file(util_path.join("sandbox/fd_sandbox.c"))
+            .file(util_path.join("fd_hash.c"))
+            .file(util_path.join("tile/fd_tile.c"))
+            .file(util_path.join("wksp/fd_wksp_helper.c"))
             .file(disco_path.join("metrics/fd_metrics.c"))
             .file(tango_path.join("mcache/fd_mcache.c"))
             .file(tango_path.join("dcache/fd_dcache.c"))
@@ -278,6 +288,7 @@ fn init_cc(
             .define("FD_HAS_LINUX", "1")
             .define("PATH_MAX", "4096")
             .define("FD_HAS_ALLOCA", "1")
+            .define("FD_HAS_ATOMIC", "1")
             // stub defs for STEM template macros
             .define("STEM_BURST", "1UL")
             .define("STEM_CALLBACK_CONTEXT_TYPE", "void")
@@ -376,6 +387,39 @@ fn cfg_catchall(_build: &mut cc::Build) {
 
 fn cfg_arm64_mac(build: &mut cc::Build) {
     build.define("SIGPOLL", "SIGIO");
+}
+
+fn generate_wrappers(disco_path: &PathBuf) -> PathBuf {
+    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let wrapper_path = out_path.join("topo_wrappers.c");
+
+    let topo_header_path = disco_path.join("topo/fd_topo.h");
+
+    let wrapper_content = format!(
+        r#"#include "{}"
+
+ulong fd_topo_find_wksp__extern(fd_topo_t const * topo, char const * name) {{
+    return fd_topo_find_wksp(topo, name);
+}}
+
+ulong fd_topo_find_tile__extern(fd_topo_t const * topo, char const * name, ulong kind_id) {{
+    return fd_topo_find_tile(topo, name, kind_id);
+}}
+
+ulong fd_topo_find_link__extern(fd_topo_t const * topo, char const * name, ulong kind_id) {{
+    return fd_topo_find_link(topo, name, kind_id);
+}}
+
+ulong fd_topo_tile_name_cnt__extern(fd_topo_t const * topo, char const * name) {{
+    return fd_topo_tile_name_cnt(topo, name);
+}}
+"#,
+        topo_header_path.canonicalize().unwrap().display()
+    );
+
+    std::fs::write(&wrapper_path, wrapper_content).expect("Failed to write wrapper file");
+
+    wrapper_path
 }
 
 fn find_vendor() -> Result<(PathBuf, PathBuf), String> {
