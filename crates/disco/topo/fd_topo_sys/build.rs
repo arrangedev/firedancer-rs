@@ -257,12 +257,32 @@ fn init_cc(
         .flag("-std=c17")
         .flag("-O3")
         .flag("-fPIC")
-        .flag("-Wno-error=implicit-function-declaration");
+        .flag("-Wno-error=implicit-function-declaration")
+        .cpp(true)  // Enable C++ compilation for .cxx files
+        .flag_if_supported("-std=c++17");
 
     #[cfg(target_os = "linux")]
     {
         build
             .file(topo_path.join("fd_topo_run.c"))
+            // Add essential utility dependencies
+            .file(util_path.join("log/fd_log.c"))
+            .file(util_path.join("cstr/fd_cstr.c"))
+            .file(util_path.join("io/fd_io.c"))
+            .file(util_path.join("shmem/fd_shmem_user.c"))
+            .file(util_path.join("shmem/fd_shmem_admin.c"))
+            .file(util_path.join("shmem/fd_numa_linux.c"))
+            .file(util_path.join("wksp/fd_wksp_admin.c"))
+            .file(util_path.join("wksp/fd_wksp_user.c"))
+            .file(util_path.join("pod/fd_pod.c"))
+            .file(util_path.join("tile/fd_tile_threads.cxx"))
+            .file(util_path.join("sandbox/fd_sandbox.c"))
+            // Add metrics dependencies
+            .file(disco_path.join("metrics/fd_metrics.c"))
+            // Add Tango IPC dependencies
+            .file(tango_path.join("mcache/fd_mcache.c"))
+            .file(tango_path.join("dcache/fd_dcache.c"))
+            .file(tango_path.join("fseq/fd_fseq.c"))
             .define("FD_HAS_LINUX", "1")
             .define("PATH_MAX", "4096")
             .define("FD_HAS_ALLOCA", "1")

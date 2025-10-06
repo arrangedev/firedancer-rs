@@ -193,7 +193,7 @@ fn analyze_topology(topo: &fd_topo::Topo) -> Result<()> {
 fn simulate_execution(topo: &mut fd_topo::Topo) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
-        println!("   > joining workspaces", topo.workspace_count());
+        println!("   > joining workspaces: {}", topo.workspace_count());
 
         match topo.join_workspaces(false) {
             Ok(()) => println!("   >> ✓ workspaces joined"),
