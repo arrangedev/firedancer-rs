@@ -157,7 +157,7 @@ fn generate_header(
 #include "{}/fd_topob.h"
 #include "{}/fd_cpu_topo.h"
 #include "{}/fd_util.h"
-#include "{}/fd_numa.h"
+#include "{}/fd_shmem_private.h"
 "#,
         topo_path.canonicalize().unwrap().display(),
         topo_path.canonicalize().unwrap().display(),

@@ -57,9 +57,7 @@ impl CpuTopology {
         let numa_node_count = unsafe { sys::fd_numa_node_cnt() } as usize;
 
         if cpu_count == 0 {
-            return Err(crate::Error::InvalidInput(
-                "Failed to detect CPU count".to_string(),
-            ));
+            return Err(crate::TopoError::SystemError);
         }
 
         Self::new_custom(cpu_count, numa_node_count.max(1))
