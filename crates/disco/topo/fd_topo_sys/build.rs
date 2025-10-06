@@ -44,6 +44,7 @@ fn main() {
         &vendor_path,
     );
     let mut build = init_cc(
+        &target_info,
         &topo_path,
         &stem_path,
         &disco_path,
@@ -231,6 +232,7 @@ fn init_bindgen(
 }
 
 fn init_cc(
+    target_info: &TargetInfo,
     topo_path: &PathBuf,
     stem_path: &PathBuf,
     disco_path: &PathBuf,
@@ -352,7 +354,6 @@ fn cfg_x86_64(build: &mut cc::Build) {
         .flag("-mavx")
         .flag("-mavx2");
 
-    // Only add AVX512 flags if we're on Linux x86_64 where they're more likely to be supported
     #[cfg(target_os = "linux")]
     {
         build
