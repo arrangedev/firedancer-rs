@@ -51,11 +51,14 @@ impl Workspace {
                 wksp_name.to_str().unwrap_or("wksp")
             );
 
-            let wksp_join = sys::fd_wksp_new_anonymous(
-                page_sz,
-                page_cnt,
-                sys::fd_shmem_cpu_idx((*self.inner).numa_idx),
+            let cpu_idx = sys::fd_shmem_cpu_idx((*self.inner).numa_idx);
+            let wksp_join = sys::fd_wksp_new_anon(
                 combined_name.as_ptr() as *const i8,
+                page_sz,
+                1, // sub_cnt
+                &page_cnt as *const u64,
+                &cpu_idx as *const u64,
+                0, // seed
                 (*self.inner).__bindgen_anon_1.part_max,
             );
 
