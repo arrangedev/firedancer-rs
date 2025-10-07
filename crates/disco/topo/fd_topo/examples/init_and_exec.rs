@@ -1,4 +1,4 @@
-use std::ffi::CStr;
+use std::{ffi::CStr, thread::sleep, time::Duration};
 
 use fd_topo::{
     types::{ActiveObject, ActiveTile, ActiveTopology},
@@ -441,43 +441,35 @@ fn create_tile_runners() -> Result<TileRunnerRegistry> {
 unsafe extern "C" fn net_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
     println!("> [net] {} starting", (*tile).id);
 
-    for i in 0..10 {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        if i % 3 == 0 {
-            println!(
+    let mut iteration = 0u64;
+    loop {
+        sleep(Duration::from_millis(100));
+        if iteration % 30 == 0 {
+            eprintln!(
                 "    >> {}: processing packets (iteration {})",
                 (*tile).id,
-                i
+                iteration
             );
         }
+        iteration = iteration.wrapping_add(1);
     }
-
-    println!(
-        "      >>> {} (kind {}) completed",
-        (*tile).id,
-        (*tile).kind_id
-    );
 }
 
 unsafe extern "C" fn quic_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
     println!("> [quic] {} starting", (*tile).id);
 
-    for i in 0..8 {
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        if i % 2 == 0 {
-            println!(
+    let mut iteration = 0u64;
+    loop {
+        sleep(Duration::from_millis(150));
+        if iteration % 20 == 0 {
+            eprintln!(
                 "    >> {}: processing connections (iteration {})",
                 (*tile).id,
-                i
+                iteration
             );
         }
+        iteration = iteration.wrapping_add(1);
     }
-
-    println!(
-        "      >>> {} (kind {}) completed",
-        (*tile).id,
-        (*tile).kind_id
-    );
 }
 
 unsafe extern "C" fn verify_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
@@ -487,41 +479,35 @@ unsafe extern "C" fn verify_tile_run(_topo: *mut ActiveTopology, tile: *mut Acti
         (*tile).kind_id
     );
 
-    for i in 0..6 {
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        if i % 2 == 0 {
-            println!(
+    let mut iteration = 0u64;
+    loop {
+        sleep(Duration::from_millis(200));
+        if iteration % 15 == 0 {
+            eprintln!(
                 "    >> {}: verifying signatures (iteration {})",
                 (*tile).id,
-                i
+                iteration
             );
         }
+        iteration = iteration.wrapping_add(1);
     }
-
-    println!(
-        "      >>> {} (kind {}) completed",
-        (*tile).id,
-        (*tile).kind_id
-    );
 }
 
 unsafe extern "C" fn pack_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
     println!("> [pack] {} starting", (*tile).id);
 
-    for i in 0..5 {
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        println!(
-            "    >> {}: packing transactions (iteration {})",
-            (*tile).id,
-            i
-        );
+    let mut iteration = 0u64;
+    loop {
+        sleep(Duration::from_millis(300));
+        if iteration % 10 == 0 {
+            eprintln!(
+                "    >> {}: packing transactions (iteration {})",
+                (*tile).id,
+                iteration
+            );
+        }
+        iteration = iteration.wrapping_add(1);
     }
-
-    println!(
-        "      >>> {} (kind {}) completed",
-        (*tile).id,
-        (*tile).kind_id
-    );
 }
 
 unsafe extern "C" fn bank_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
@@ -531,42 +517,36 @@ unsafe extern "C" fn bank_tile_run(_topo: *mut ActiveTopology, tile: *mut Active
         (*tile).kind_id
     );
 
-    for i in 0..4 {
-        std::thread::sleep(std::time::Duration::from_millis(400));
-        println!(
-            "    >> {} (kind {}): processing operations (iteration {})",
-            (*tile).id,
-            (*tile).kind_id,
-            i
-        );
+    let mut iteration = 0u64;
+    loop {
+        sleep(Duration::from_millis(400));
+        if iteration % 7 == 0 {
+            eprintln!(
+                "    >> {} (kind {}): processing operations (iteration {})",
+                (*tile).id,
+                (*tile).kind_id,
+                iteration
+            );
+        }
+        iteration = iteration.wrapping_add(1);
     }
-
-    println!(
-        "      >>> {} (kind {}) completed",
-        (*tile).id,
-        (*tile).kind_id
-    );
 }
 
 unsafe extern "C" fn metric_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
     println!("> [metric] {} starting", (*tile).id);
 
-    for i in 0..12 {
-        std::thread::sleep(std::time::Duration::from_millis(250));
-        if i % 4 == 0 {
-            println!(
+    let mut iteration = 0u64;
+    loop {
+        sleep(Duration::from_millis(250));
+        if iteration % 12 == 0 {
+            eprintln!(
                 "    >> {}: collecting metrics (iteration {})",
                 (*tile).id,
-                i
+                iteration
             );
         }
+        iteration = iteration.wrapping_add(1);
     }
-
-    println!(
-        "      >>> {} (kind {}) completed",
-        (*tile).id,
-        (*tile).kind_id
-    );
 }
 
 fn create_callbacks() -> Result<TopologyCallbacks> {
