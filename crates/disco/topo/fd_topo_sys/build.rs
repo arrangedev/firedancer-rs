@@ -463,6 +463,7 @@ fn generate_wrappers(disco_path: &PathBuf) -> PathBuf {
 
     let wrapper_content = format!(
         r#"#include "{}"
+#include "{}"
 
 ulong fd_topo_find_wksp__extern(fd_topo_t const * topo, char const * name) {{
     return fd_topo_find_wksp(topo, name);
@@ -479,8 +480,21 @@ ulong fd_topo_find_link__extern(fd_topo_t const * topo, char const * name, ulong
 ulong fd_topo_tile_name_cnt__extern(fd_topo_t const * topo, char const * name) {{
     return fd_topo_tile_name_cnt(topo, name);
 }}
+
+void* fd_topo_obj_laddr__extern(fd_topo_t const * topo, ulong obj_id) {{
+    return fd_topo_obj_laddr(topo, obj_id);
+}}
+
+void* fd_metrics_new__extern(void* shmem, ulong in_link_cnt, ulong out_link_consumer_cnt) {{
+    return fd_metrics_new(shmem, in_link_cnt, out_link_consumer_cnt);
+}}
 "#,
-        topo_header_path.canonicalize().unwrap().display()
+        topo_header_path.canonicalize().unwrap().display(),
+        disco_path
+            .join("metrics/fd_metrics.h")
+            .canonicalize()
+            .unwrap()
+            .display()
     );
 
     std::fs::write(&wrapper_path, wrapper_content).expect("Failed to write wrapper file");
