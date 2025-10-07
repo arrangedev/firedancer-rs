@@ -115,11 +115,6 @@ const AUTO_OBJECTS: [&'static CStr; 6] = [
 ];
 
 fn main() -> Result<()> {
-    // Initialize the fd_topo system and logging
-    unsafe {
-        fd_topo::init(PROGNAME);
-    }
-
     let cpu_topo = match std::env::var("FD_CPU_METHOD").as_deref() {
         Ok("thin") => CpuTopology::new_simple(PROGNAME)?,
         Ok("full") => {
@@ -189,10 +184,14 @@ fn main() -> Result<()> {
             println!("   >> run [vendor_path]/util/shmem/fd_shmem_cfg alloc [page_cnt] [page_sz] [numa_node]");
         }
 
-        builder.build_anonymous(callback_ptr, Some(PageSize::Normal))?
+        let result = builder.build_anonymous(callback_ptr, Some(PageSize::Normal))?;
+        println!("> [build] ✓ anonymous topology created");
+        result
     } else {
         println!("> [build] using wksps (disk-backed)");
-        builder.build(callback_ptr, false)?
+        let result = builder.build(callback_ptr, false)?;
+        println!("> [build] ✓ disk-backed topology created");
+        result
     };
 
     analyze_topology(&topo)?;
