@@ -6,6 +6,9 @@ use crate::{
     Result,
 };
 use core::ffi::CStr;
+use fd_topo_sys as sys;
+
+const SCRATCH_BUF_SZ: usize = 4096;
 
 /// A unique process spawned within a workspace, representing
 /// one thread of execution. All tiles are sandboxed to their
@@ -157,6 +160,108 @@ impl Tile {
         unsafe { (*self.inner).uses_obj_cnt as usize }
     }
 
+    /// Get input link by index
+    #[inline]
+    pub fn input_link(&self, topo: &crate::Topo, index: usize) -> Option<crate::Link> {
+        if index >= self.input_cnt() {
+            return None;
+        }
+        unsafe {
+            let link_id = (*self.inner).in_link_id[index] as usize;
+            let topo_ptr = topo.as_ptr() as *mut crate::types::_TopoInternal;
+            let link_ptr = &mut (*topo_ptr).links[link_id] as *mut crate::types::_LinkInternal;
+            Some(crate::Link::from_raw(link_ptr))
+        }
+    }
+
+    /// Get output link by index
+    #[inline]
+    pub fn output_link(&self, topo: &crate::Topo, index: usize) -> Option<crate::Link> {
+        if index >= self.output_cnt() {
+            return None;
+        }
+        unsafe {
+            let link_id = (*self.inner).out_link_id[index] as usize;
+            let topo_ptr = topo.as_ptr() as *mut crate::types::_TopoInternal;
+            let link_ptr = &mut (*topo_ptr).links[link_id] as *mut crate::types::_LinkInternal;
+            Some(crate::Link::from_raw(link_ptr))
+        }
+    }
+
+    /// Get mcache pointer for an input link
+    #[inline]
+    pub unsafe fn input_mcache(&self, topo: &crate::Topo, index: usize) -> Option<*mut u8> {
+        let link = self.input_link(topo, index)?;
+        let topo_ptr = topo.as_ptr();
+        let mcache_obj_id = link.mcache_obj_id();
+        let obj = &(*topo_ptr).objs[mcache_obj_id];
+        let mcache_laddr = sys::fd_topo_obj_laddr(topo_ptr as *mut _, obj.id);
+
+        if mcache_laddr.is_null() {
+            None
+        } else {
+            Some(mcache_laddr as *mut u8)
+        }
+    }
+
+    /// Get mcache pointer for an output link
+    #[inline]
+    pub unsafe fn output_mcache(&self, topo: &crate::Topo, index: usize) -> Option<*mut u8> {
+        let link = self.output_link(topo, index)?;
+        let topo_ptr = topo.as_ptr();
+        let mcache_obj_id = link.mcache_obj_id();
+        let obj = &(*topo_ptr).objs[mcache_obj_id];
+        let mcache_laddr = fd_topo_sys::fd_topo_obj_laddr(topo_ptr as *mut _, obj.id);
+
+        if mcache_laddr.is_null() {
+            None
+        } else {
+            Some(mcache_laddr as *mut u8)
+        }
+    }
+
+    /// Get dcache pointer for an input link (if it has one)
+    #[inline]
+    pub unsafe fn input_dcache(&self, topo: &crate::Topo, index: usize) -> Option<*mut u8> {
+        let link = self.input_link(topo, index)?;
+
+        if !link.has_dcache() {
+            return None;
+        }
+
+        let topo_ptr = topo.as_ptr();
+        let dcache_obj_id = link.dcache_object_id();
+        let obj = &(*topo_ptr).objs[dcache_obj_id];
+        let dcache_laddr = fd_topo_sys::fd_topo_obj_laddr(topo_ptr as *mut _, obj.id);
+
+        if dcache_laddr.is_null() {
+            None
+        } else {
+            Some(dcache_laddr as *mut u8)
+        }
+    }
+
+    /// Get dcache pointer for an output link (if it has one)
+    #[inline]
+    pub unsafe fn output_dcache(&self, topo: &crate::Topo, index: usize) -> Option<*mut u8> {
+        let link = self.output_link(topo, index)?;
+
+        if !link.has_dcache() {
+            return None;
+        }
+
+        let topo_ptr = topo.as_ptr();
+        let dcache_obj_id = link.dcache_object_id();
+        let obj = &(*topo_ptr).objs[dcache_obj_id];
+        let dcache_laddr = sys::fd_topo_obj_laddr(topo_ptr as *mut _, obj.id);
+
+        if dcache_laddr.is_null() {
+            None
+        } else {
+            Some(dcache_laddr as *mut u8)
+        }
+    }
+
     /// ids of objects this tile uses
     #[inline]
     pub fn uses_obj_ids(&self) -> Vec<usize> {
@@ -168,6 +273,145 @@ impl Tile {
             }
             ids
         }
+    }
+
+    /// Send data through an output link, without bounds or ptr checks
+    #[inline]
+    pub unsafe fn send_unchecked(
+        &self,
+        topo: &crate::Topo,
+        link_index: usize,
+        data: &[u8],
+    ) -> crate::Result<()> {
+        let mcache_ptr = self
+            .output_mcache(topo, link_index)
+            .ok_or(crate::TopoError::NotFound)?;
+
+        let dcache_ptr = self
+            .output_dcache(topo, link_index)
+            .ok_or(crate::TopoError::NotFound)?;
+
+        let sync_ptr = fd_topo_sys::fd_mcache_seq_laddr(mcache_ptr as *mut _);
+        let seq = fd_topo_sys::fd_mcache_seq_query(sync_ptr);
+
+        let link = self
+            .output_link(topo, link_index)
+            .ok_or(crate::TopoError::NotFound)?;
+        let depth = link.depth() as u64;
+
+        // get chunk from dcache
+        let chunk = fd_topo_sys::fd_dcache_compact_chunk0(
+            topo.as_ptr() as *const _,
+            dcache_ptr as *const _,
+        );
+
+        if chunk == 0 {
+            return Err(crate::TopoError::SystemError);
+        }
+
+        let chunk_addr = (dcache_ptr as u64).wrapping_add(chunk as u64) as *mut u8;
+        std::ptr::copy_nonoverlapping(data.as_ptr(), chunk_addr, data.len());
+
+        // control word (som=1, eom=1 for complete message, err=0)
+        let ctl = fd_topo_sys::fd_frag_meta_ctl(0, 1, 1, 0);
+
+        fd_topo_sys::fd_mcache_publish(
+            mcache_ptr as *mut _,
+            depth,
+            seq,
+            0,                 // sig
+            chunk,             // chunk
+            data.len() as u64, // sz
+            ctl,               // ctl
+            0,                 // tsorig
+            0,                 // tspub
+        );
+
+        Ok(())
+    }
+
+    /// Receive data from an input link into a provided buffer
+    /// Returns the number of bytes received, or None if no data available
+    #[inline]
+    pub unsafe fn _recv_internal(
+        &self,
+        topo: &crate::Topo,
+        link_index: usize,
+        buffer: &mut [u8],
+    ) -> Option<usize> {
+        let mcache_ptr = self.input_mcache(topo, link_index)?;
+        let dcache_ptr = self.input_dcache(topo, link_index)?;
+
+        let sync_ptr = fd_topo_sys::fd_mcache_seq_laddr(mcache_ptr as *mut _);
+        let seq = fd_topo_sys::fd_mcache_seq_query(sync_ptr);
+        let link = self.input_link(topo, link_index)?;
+        let depth = link.depth() as u64;
+
+        let available_seq = fd_topo_sys::fd_mcache_query(mcache_ptr as *const _, depth, seq);
+
+        if available_seq == seq {
+            return None;
+        }
+
+        let mcache_line_idx = seq % depth;
+        let frag_meta_ptr =
+            (mcache_ptr as *const fd_topo_sys::fd_frag_meta_t).offset(mcache_line_idx as isize);
+
+        let chunk = (*frag_meta_ptr).__bindgen_anon_1.chunk;
+        let sz = (*frag_meta_ptr).__bindgen_anon_1.sz;
+
+        if sz == 0 || chunk == 0 || sz as usize > buffer.len() {
+            return None;
+        }
+
+        let chunk_addr = (dcache_ptr as u64).wrapping_add(chunk as u64) as *const u8;
+
+        core::ptr::copy_nonoverlapping(chunk_addr, buffer.as_mut_ptr(), sz as usize);
+        fd_topo_sys::fd_mcache_seq_update(sync_ptr, seq.wrapping_add(1));
+
+        Some(sz as usize)
+    }
+
+    #[inline]
+    pub unsafe fn recv_unchecked(&self, topo: &crate::Topo, link_index: usize) -> Option<Vec<u8>> {
+        let mut buffer = [0u8; SCRATCH_BUF_SZ];
+        let bytes_received = self._recv_internal(topo, link_index, &mut buffer)?;
+        Some(buffer[..bytes_received].to_vec())
+    }
+
+    #[inline]
+    pub fn send<T>(&self, topo: &crate::Topo, link_index: usize, data: &T) -> crate::Result<()> {
+        let bytes = unsafe {
+            std::slice::from_raw_parts(data as *const T as *const u8, std::mem::size_of::<T>())
+        };
+        unsafe { self.send_unchecked(topo, link_index, bytes) }
+    }
+
+    #[inline]
+    pub unsafe fn recv_into<T>(
+        &self,
+        topo: &crate::Topo,
+        link_index: usize,
+        output: &mut T,
+    ) -> bool {
+        let buffer =
+            std::slice::from_raw_parts_mut(output as *mut T as *mut u8, std::mem::size_of::<T>());
+
+        match self._recv_internal(topo, link_index, buffer) {
+            Some(bytes_received) if bytes_received == std::mem::size_of::<T>() => true,
+            _ => false,
+        }
+    }
+
+    #[inline]
+    pub fn recv<T>(&self, topo: &crate::Topo, link_index: usize) -> Option<T> {
+        let data = unsafe { self.recv_unchecked(topo, link_index)? };
+
+        if data.len() != std::mem::size_of::<T>() {
+            return None; // sz_mismatch
+        }
+
+        Some(unsafe { std::ptr::read(data.as_ptr() as *const T) })
     }
 }
 

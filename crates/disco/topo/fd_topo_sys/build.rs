@@ -240,6 +240,8 @@ fn init_bindgen(
         .allowlist_function("fd_dcache_.*")
         .allowlist_function("fd_fseq_.*")
         .allowlist_function("fd_metrics_.*")
+        .allowlist_function("fd_seq_.*")
+        .allowlist_function("fd_frag_.*")
         .allowlist_function("fd_boot")
         .allowlist_function("fd_halt")
         .allowlist_type("fd_topo_.*")
