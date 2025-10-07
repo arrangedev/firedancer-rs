@@ -80,17 +80,11 @@ impl Workspace {
             );
 
             if wksp_join.is_null() {
-                let _page_type = match requested_page_sz {
-                    x if x == sys::FD_SHMEM_NORMAL_PAGE_SZ as u64 => "normal (4KB)",
-                    x if x == sys::FD_SHMEM_HUGE_PAGE_SZ as u64 => "huge (2MB)",
-                    x if x == sys::FD_SHMEM_GIGANTIC_PAGE_SZ as u64 => "gigantic (1GB)",
-                    _ => "unknown",
-                };
-
+                // this will trigger an abort signal
                 fd_error!(
-                    "Failed to create anonymous workspace '{}' with {} pages.",
+                    "Failed to create anonymous workspace '{}' with page_sz={}.",
                     wksp_name.to_str().unwrap_or("unknown"),
-                    _page_type
+                    requested_page_sz
                 );
             }
 

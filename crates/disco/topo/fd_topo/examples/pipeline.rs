@@ -184,14 +184,10 @@ fn main() -> Result<()> {
             println!("   >> run [vendor_path]/util/shmem/fd_shmem_cfg alloc [page_cnt] [page_sz] [numa_node]");
         }
 
-        let result = builder.build_anonymous(callback_ptr, Some(PageSize::Normal))?;
-        println!("> [build] ✓ anonymous topology created");
-        result
+        builder.build_anonymous(callback_ptr, Some(PageSize::Normal))?
     } else {
         println!("> [build] using wksps (disk-backed)");
-        let result = builder.build(callback_ptr, false)?;
-        println!("> [build] ✓ disk-backed topology created");
-        result
+        builder.build(callback_ptr, false)?
     };
 
     analyze_topology(&topo)?;
@@ -231,7 +227,6 @@ fn create_workspaces(builder: &mut TopoBuilder) -> Result<()> {
 fn create_links(builder: &mut TopoBuilder) -> Result<()> {
     println!("> [link] creating links");
 
-    // Links from metric collectors to processor (in metrics workspace for efficiency)
     builder.add_link(CPUMEM_LINK, METRICS_WKSP, 512, 1024, 8)?;
     println!("   >> ✓ link: cm_to_pr (depth: 512, mtu: 1024)");
 
@@ -241,7 +236,6 @@ fn create_links(builder: &mut TopoBuilder) -> Result<()> {
     builder.add_link(NETWORK_LINK, METRICS_WKSP, 512, 1024, 8)?;
     println!("   >> ✓ link: nt_to_pr (depth: 512, mtu: 1024)");
 
-    // Link from processor to writer (in processing workspace)
     builder.add_link(PROCESSOR_LINK, PROCESSING_WKSP, 256, 2048, 4)?;
     println!("   >> ✓ link: pr_to_wr (depth: 256, mtu: 2048)");
 
@@ -280,7 +274,7 @@ fn create_tiles(builder: &mut TopoBuilder) -> Result<()> {
 
     builder.add_tile(
         PROCESSOR_TILE,
-        METRICS_WKSP, // Move processor to metrics workspace for efficient link access
+        METRICS_WKSP,
         METRICS_WKSP,
         Some(3),
         false,
@@ -299,33 +293,15 @@ fn create_tiles(builder: &mut TopoBuilder) -> Result<()> {
 fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
     println!("> [tile] wiring tiles");
 
-    // Wire metric collectors to processor (all in METRICS_WKSP)
     builder.add_tile_output(CPUMEM_TILE, 0, CPUMEM_LINK, 0)?;
-    builder.add_tile_input(
-        PROCESSOR_TILE,
-        0,
-        METRICS_WKSP, // Both tile and link are in metrics workspace
-        CPUMEM_LINK,
-        0,
-        true,
-        true,
-    )?;
+    builder.add_tile_input(PROCESSOR_TILE, 0, METRICS_WKSP, CPUMEM_LINK, 0, true, true)?;
 
     builder.add_tile_output(DISK_TILE, 0, DISK_LINK, 0)?;
     builder.add_tile_input(PROCESSOR_TILE, 0, METRICS_WKSP, DISK_LINK, 0, true, true)?;
 
     builder.add_tile_output(NETWORK_TILE, 0, NETWORK_LINK, 0)?;
-    builder.add_tile_input(
-        PROCESSOR_TILE,
-        0,
-        METRICS_WKSP, // Both tile and link are in metrics workspace
-        NETWORK_LINK,
-        0,
-        true,
-        true,
-    )?;
+    builder.add_tile_input(PROCESSOR_TILE, 0, METRICS_WKSP, NETWORK_LINK, 0, true, true)?;
 
-    // Wire processor to writer (cross-workspace: PROCESSING_WKSP -> OUTPUT_WKSP)
     builder.add_tile_output(PROCESSOR_TILE, 0, PROCESSOR_LINK, 0)?;
     builder.add_tile_input(
         WRITER_TILE,
