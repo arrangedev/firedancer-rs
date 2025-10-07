@@ -2,8 +2,8 @@
 //!
 //! Objects represent memory allocations within workspaces.
 
+use core::ffi::CStr;
 use fd_topo_sys as sys;
-use std::ffi::CStr;
 
 /// Represents an object in the topology.
 pub struct Object {

@@ -4,8 +4,8 @@
 //! more consumers. A link may optionally also have a dcache, that holds
 //! fragments referred to by the mcache entries.
 
+use core::ffi::CStr;
 use fd_topo_sys as sys;
-use std::ffi::CStr;
 
 /// Represents a link in the topology.
 pub struct Link {

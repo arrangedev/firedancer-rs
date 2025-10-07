@@ -4,8 +4,8 @@
 //! one thread of execution. Firedancer sandboxes all tiles to their own
 //! process for security reasons.
 
+use core::ffi::CStr;
 use fd_topo_sys as sys;
-use std::ffi::CStr;
 
 /// Represents a tile in the topology.
 pub struct Tile {

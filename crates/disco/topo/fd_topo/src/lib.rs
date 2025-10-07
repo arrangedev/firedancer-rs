@@ -10,8 +10,9 @@
 //! - Link (`Link`): Communication channels between tiles with mcache/dcache
 //! - Object (`Object`): Memory objects within workspaces
 
+use core::ffi::CStr;
 use fd_topo_sys as sys;
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 use std::sync::Once;
 
 pub mod builder;
@@ -35,7 +36,7 @@ static INIT: Once = Once::new();
 pub unsafe fn init() {
     INIT.call_once(|| {
         let program_name = b"fd_topo\0".as_ptr() as *mut i8;
-        let mut argv_array = [program_name, std::ptr::null_mut()];
+        let mut argv_array = [program_name, core::ptr::null_mut()];
         let mut argc = 1i32;
         let mut argv = argv_array.as_mut_ptr();
         sys::fd_boot(&mut argc, &mut argv);
@@ -45,6 +46,9 @@ pub unsafe fn init() {
 pub unsafe fn shutdown() {
     sys::fd_halt();
 }
+
+pub type TopoCallbackFn<R> =
+    unsafe extern "C" fn(topo: *const sys::fd_topo_t, obj: *const sys::fd_topo_obj_t) -> R;
 
 pub const MAX_WORKSPACES: usize = sys::FD_TOPO_MAX_WKSPS as usize;
 pub const MAX_LINKS: usize = sys::FD_TOPO_MAX_LINKS as usize;
@@ -233,10 +237,10 @@ impl Topo {
                 0, // not dumpable
                 uid,
                 gid,
-                -1,                   // no special fd
-                std::ptr::null_mut(), // no wait
-                std::ptr::null_mut(), // no debugger
-                std::ptr::null_mut(), // tile_run function pointer - will use default
+                -1,                    // no special fd
+                core::ptr::null_mut(), // no wait
+                core::ptr::null_mut(), // no debugger
+                core::ptr::null_mut(), // tile_run function pointer - will use default
             );
         }
 

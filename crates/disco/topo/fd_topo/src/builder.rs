@@ -1,42 +1,32 @@
+use crate::TopoCallbackFn;
 use crate::{Result, Topo, TopoError};
+use core::ffi::CStr;
 use core::mem;
 use core::ptr;
 use fd_topo_sys as sys;
-use std::ffi::{CStr, CString};
 
 /// Callback functions for topology objects
 pub struct ObjectCallbacks {
     /// Object name (must match the name used when creating the object)
-    pub name: String,
+    pub name: &'static CStr,
     /// Calculate the memory footprint required for this object
-    pub footprint:
-        unsafe extern "C" fn(topo: *const sys::fd_topo_t, obj: *const sys::fd_topo_obj_t) -> u64,
+    pub footprint: TopoCallbackFn<u64>,
     /// Calculate the memory alignment required for this object
-    pub align:
-        unsafe extern "C" fn(topo: *const sys::fd_topo_t, obj: *const sys::fd_topo_obj_t) -> u64,
+    pub align: TopoCallbackFn<u64>,
     /// Calculate loose memory requirements (optional, can be None)
-    pub loose: Option<
-        unsafe extern "C" fn(topo: *const sys::fd_topo_t, obj: *const sys::fd_topo_obj_t) -> u64,
-    >,
+    pub loose: Option<TopoCallbackFn<u64>>,
     /// Initialize the object after memory allocation (optional, can be None)
-    pub new:
-        Option<unsafe extern "C" fn(topo: *const sys::fd_topo_t, obj: *const sys::fd_topo_obj_t)>,
+    pub new: Option<TopoCallbackFn<()>>,
 }
 
 impl ObjectCallbacks {
     pub fn new(
-        name: impl Into<String>,
-        footprint: unsafe extern "C" fn(
-            topo: *const sys::fd_topo_t,
-            obj: *const sys::fd_topo_obj_t,
-        ) -> u64,
-        align: unsafe extern "C" fn(
-            topo: *const sys::fd_topo_t,
-            obj: *const sys::fd_topo_obj_t,
-        ) -> u64,
+        name: &'static CStr,
+        footprint: TopoCallbackFn<u64>,
+        align: TopoCallbackFn<u64>,
     ) -> Self {
         Self {
-            name: name.into(),
+            name,
             footprint,
             align,
             loose: None,
@@ -45,21 +35,12 @@ impl ObjectCallbacks {
     }
 
     /// loose memory callback
-    pub fn with_loose(
-        mut self,
-        loose: unsafe extern "C" fn(
-            topo: *const sys::fd_topo_t,
-            obj: *const sys::fd_topo_obj_t,
-        ) -> u64,
-    ) -> Self {
+    pub fn with_loose(mut self, loose: TopoCallbackFn<u64>) -> Self {
         self.loose = Some(loose);
         self
     }
 
-    pub fn with_new(
-        mut self,
-        new: unsafe extern "C" fn(topo: *const sys::fd_topo_t, obj: *const sys::fd_topo_obj_t),
-    ) -> Self {
+    pub fn with_new(mut self, new: TopoCallbackFn<()>) -> Self {
         self.new = Some(new);
         self
     }
@@ -70,7 +51,7 @@ pub struct CallbackRegistry {
     callbacks: Vec<ObjectCallbacks>,
     // Keep the C-compatible structures alive
     c_callbacks: Vec<sys::fd_topo_obj_callbacks_t>,
-    c_names: Vec<CString>,
+    c_names: Vec<*const i8>,
     c_callback_ptrs: Vec<*mut sys::fd_topo_obj_callbacks_t>,
 }
 
@@ -100,17 +81,17 @@ impl CallbackRegistry {
         self.c_callback_ptrs.clear();
 
         for callback in &self.callbacks {
-            let c_name = CString::new(callback.name.clone())?;
+            let c_name = callback.name;
 
             let c_callback = sys::fd_topo_obj_callbacks_t {
-                name: c_name.as_ptr(),
+                name: c_name.as_ptr() as *const i8,
                 footprint: Some(callback.footprint),
                 align: Some(callback.align),
                 loose: callback.loose,
                 new: callback.new,
             };
 
-            self.c_names.push(c_name);
+            self.c_names.push(c_name.as_ptr() as *const i8);
             self.c_callbacks.push(c_callback);
         }
 
@@ -139,8 +120,7 @@ pub struct TopoBuilder {
 }
 
 impl TopoBuilder {
-    pub fn new(app_name: &str) -> Result<Self> {
-        let c_app_name = CString::new(app_name)?;
+    pub fn new(app_name: &'static CStr) -> Result<Self> {
         let topo_size = mem::size_of::<sys::fd_topo_t>();
         let align = mem::align_of::<sys::fd_topo_t>();
 
@@ -149,7 +129,7 @@ impl TopoBuilder {
         };
 
         unsafe {
-            let topo_ptr = sys::fd_topob_new(mem as *mut _, c_app_name.as_ptr());
+            let topo_ptr = sys::fd_topob_new(mem as *mut _, app_name.as_ptr());
             if topo_ptr.is_null() {
                 return Err(TopoError::MemoryError);
             }
@@ -161,11 +141,9 @@ impl TopoBuilder {
         }
     }
 
-    pub fn add_workspace(&mut self, name: &str) -> Result<()> {
-        let c_name = CString::new(name)?;
-
+    pub fn add_workspace(&mut self, name: &'static CStr) -> Result<()> {
         unsafe {
-            let wksp_ptr = sys::fd_topob_wksp(self.inner, c_name.as_ptr());
+            let wksp_ptr = sys::fd_topob_wksp(self.inner, name.as_ptr());
             if wksp_ptr.is_null() {
                 return Err(TopoError::SystemError);
             }
@@ -174,12 +152,9 @@ impl TopoBuilder {
         Ok(())
     }
 
-    pub fn add_object(&mut self, obj_name: &str, wksp_name: &str) -> Result<()> {
-        let c_obj_name = CString::new(obj_name)?;
-        let c_wksp_name = CString::new(wksp_name)?;
-
+    pub fn add_object(&mut self, obj_name: &'static CStr, wksp_name: &'static CStr) -> Result<()> {
         unsafe {
-            let obj_ptr = sys::fd_topob_obj(self.inner, c_obj_name.as_ptr(), c_wksp_name.as_ptr());
+            let obj_ptr = sys::fd_topob_obj(self.inner, obj_name.as_ptr(), wksp_name.as_ptr());
             if obj_ptr.is_null() {
                 return Err(TopoError::SystemError);
             }
@@ -190,20 +165,17 @@ impl TopoBuilder {
 
     pub fn add_link(
         &mut self,
-        link_name: &str,
-        wksp_name: &str,
+        link_name: &'static CStr,
+        wksp_name: &'static CStr,
         depth: usize,
         mtu: usize,
         burst: usize,
     ) -> Result<()> {
-        let c_link_name = CString::new(link_name)?;
-        let c_wksp_name = CString::new(wksp_name)?;
-
         unsafe {
             let link_ptr = sys::fd_topob_link(
                 self.inner,
-                c_link_name.as_ptr(),
-                c_wksp_name.as_ptr(),
+                link_name.as_ptr(),
+                wksp_name.as_ptr(),
                 depth as u64,
                 mtu as u64,
                 burst as u64,
@@ -218,25 +190,21 @@ impl TopoBuilder {
 
     pub fn add_tile(
         &mut self,
-        tile_name: &str,
-        tile_wksp: &str,
-        metrics_wksp: &str,
+        tile_name: &'static CStr,
+        tile_wksp: &'static CStr,
+        metrics_wksp: &'static CStr,
         cpu_idx: Option<usize>,
         is_agave: bool,
         uses_keyswitch: bool,
     ) -> Result<()> {
-        let c_tile_name = CString::new(tile_name)?;
-        let c_tile_wksp = CString::new(tile_wksp)?;
-        let c_metrics_wksp = CString::new(metrics_wksp)?;
-
         let cpu_idx = cpu_idx.unwrap_or(u64::MAX as usize);
 
         unsafe {
             let tile_ptr = sys::fd_topob_tile(
                 self.inner,
-                c_tile_name.as_ptr(),
-                c_tile_wksp.as_ptr(),
-                c_metrics_wksp.as_ptr(),
+                tile_name.as_ptr(),
+                tile_wksp.as_ptr(),
+                metrics_wksp.as_ptr(),
                 cpu_idx as u64,
                 if is_agave { 1 } else { 0 },
                 if uses_keyswitch { 1 } else { 0 },
@@ -252,25 +220,21 @@ impl TopoBuilder {
     /// Add an input link to a tile
     pub fn add_tile_input(
         &mut self,
-        tile_name: &str,
+        tile_name: &'static CStr,
         tile_kind_id: usize,
-        fseq_wksp: &str,
-        link_name: &str,
+        fseq_wksp: &'static CStr,
+        link_name: &'static CStr,
         link_kind_id: usize,
         reliable: bool,
         polled: bool,
     ) -> Result<()> {
-        let c_tile_name = CString::new(tile_name)?;
-        let c_fseq_wksp = CString::new(fseq_wksp)?;
-        let c_link_name = CString::new(link_name)?;
-
         unsafe {
             sys::fd_topob_tile_in(
                 self.inner,
-                c_tile_name.as_ptr(),
+                tile_name.as_ptr(),
                 tile_kind_id as u64,
-                c_fseq_wksp.as_ptr(),
-                c_link_name.as_ptr(),
+                fseq_wksp.as_ptr(),
+                link_name.as_ptr(),
                 link_kind_id as u64,
                 if reliable { 1 } else { 0 },
                 if polled { 1 } else { 0 },
@@ -283,20 +247,17 @@ impl TopoBuilder {
     /// Add an output link to a tile
     pub fn add_tile_output(
         &mut self,
-        tile_name: &str,
+        tile_name: &'static CStr,
         tile_kind_id: usize,
-        link_name: &str,
+        link_name: &'static CStr,
         link_kind_id: usize,
     ) -> Result<()> {
-        let c_tile_name = CString::new(tile_name)?;
-        let c_link_name = CString::new(link_name)?;
-
         unsafe {
             sys::fd_topob_tile_out(
                 self.inner,
-                c_tile_name.as_ptr(),
+                tile_name.as_ptr(),
                 tile_kind_id as u64,
-                c_link_name.as_ptr(),
+                link_name.as_ptr(),
                 link_kind_id as u64,
             );
         }

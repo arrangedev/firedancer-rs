@@ -4,8 +4,8 @@
 //! sits on top of 1 or more memory mapped gigantic or huge pages mounted
 //! to the hugetlbfs.
 
+use core::ffi::CStr;
 use fd_topo_sys as sys;
-use std::ffi::CStr;
 
 /// Represents a workspace in the topology.
 pub struct Workspace {
