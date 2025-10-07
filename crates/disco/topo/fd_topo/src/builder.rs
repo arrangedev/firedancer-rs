@@ -4,6 +4,7 @@ use core::ffi::CStr;
 use core::mem;
 use core::ptr;
 use fd_topo_sys as sys;
+use std::mem::ManuallyDrop;
 
 /// Callback functions for topology objects
 pub struct ObjectCallbacks {
@@ -281,52 +282,28 @@ impl TopoBuilder {
         Ok(())
     }
 
-    /// Create the shared memory region for a specific workspace by name.
-    /// Must be called after `add_wksp`, but before attempting to join
-    #[allow(dead_code)]
-    fn create_wksp(&mut self, name: &str, update_existing: bool) -> Result<()> {
-        unsafe {
-            let topo = &*self.inner;
-            for i in 0..topo.wksp_cnt {
-                let wksp_ptr = &mut (*self.inner).workspaces[i as usize];
-                let wksp_name = CStr::from_ptr(wksp_ptr.name.as_ptr())
-                    .to_str()
-                    .map_err(|_| TopoError::InvalidInput)?;
-
-                if wksp_name == name {
-                    let mut workspace = Workspace::from_raw(wksp_ptr);
-                    return workspace.create(self.inner, update_existing);
-                }
-            }
-            Err(TopoError::NotFound)
-        }
-    }
-
-    #[inline]
-    fn create_all_wksps(&mut self, update_existing: bool) -> Result<()> {
-        unsafe {
-            for i in 0..(*self.inner).wksp_cnt {
-                let wksp_ptr = &mut (*self.inner).workspaces[i as usize];
-                let mut workspace = Workspace::from_raw(wksp_ptr);
-                workspace.create(self.inner, update_existing)?;
-            }
-        }
-        Ok(())
-    }
-
     pub fn build(
-        mut self,
+        self,
         callbacks: *mut *mut sys::fd_topo_obj_callbacks_t,
         update_existing: bool,
     ) -> Result<Topo> {
-        self.create_all_wksps(update_existing)?;
+        let mut this = ManuallyDrop::new(self);
 
         unsafe {
-            sys::fd_topob_finish(self.inner, callbacks);
-            let topo = Topo::from_raw(self.inner, true);
+            sys::fd_topob_finish(this.inner, callbacks);
+            for i in 0..(*this.inner).wksp_cnt {
+                let wksp = &mut (*this.inner).workspaces[i as usize];
+                let result = sys::fd_topo_create_workspace(
+                    this.inner,
+                    wksp,
+                    if update_existing { 1 } else { 0 },
+                );
+                if result != 0 {
+                    return Err(TopoError::SystemError);
+                }
+            }
 
-            // we're transferring ownership, so we can use forget here
-            std::mem::forget(self);
+            let topo = Topo::from_raw(this.inner, true);
 
             Ok(topo)
         }
