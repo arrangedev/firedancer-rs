@@ -1,7 +1,7 @@
 use core::ffi::CStr;
 use fd_topo_sys as sys;
 
-use crate::types::{_TopoInternal, _WorkspaceInternal};
+use crate::types::{PageSize, _TopoInternal, _WorkspaceInternal};
 
 /// A memory management component that is comprised of multiple orchestrated
 /// tiles, objects for them to access, and sits on top of one or more
@@ -30,13 +30,17 @@ impl Workspace {
     ///
     /// Anonymous workspaces don't require shared memory setup.
     /// They exist only in memory and are automatically cleaned up when the process exits.
-    pub fn create_anonymous(&mut self, topo: *mut _TopoInternal) -> crate::Result<()> {
+    pub fn create_anonymous(
+        &mut self,
+        topo: *mut _TopoInternal,
+        page_sz: Option<PageSize>,
+    ) -> crate::Result<()> {
         unsafe {
-            let page_cnt = (*self.inner).__bindgen_anon_1.page_cnt;
-            let page_sz = (*self.inner).__bindgen_anon_1.page_sz;
+            let original_page_cnt = (*self.inner).__bindgen_anon_1.page_cnt;
+            let original_page_sz = (*self.inner).__bindgen_anon_1.page_sz;
             let _total_footprint = (*self.inner).__bindgen_anon_1.total_footprint;
 
-            if page_cnt == 0 || page_sz == 0 {
+            if original_page_cnt == 0 || original_page_sz == 0 {
                 return Err(crate::TopoError::SystemError);
             }
 
@@ -50,18 +54,41 @@ impl Workspace {
             );
 
             let cpu_idx = sys::fd_shmem_cpu_idx((*self.inner).numa_idx);
+            let requested_page_sz = match page_sz {
+                Some(PageSize::Normal) => sys::FD_SHMEM_NORMAL_PAGE_SZ as u64,
+                Some(PageSize::Huge) => sys::FD_SHMEM_HUGE_PAGE_SZ as u64,
+                Some(PageSize::Gigantic) => sys::FD_SHMEM_GIGANTIC_PAGE_SZ as u64,
+                None => original_page_sz,
+            };
+
+            let total_size = original_page_cnt * original_page_sz;
+            let requested_page_cnt = (total_size + requested_page_sz - 1) / requested_page_sz;
+            (*self.inner).__bindgen_anon_1.page_sz = requested_page_sz;
+            (*self.inner).__bindgen_anon_1.page_cnt = requested_page_cnt;
+
             let wksp_join = sys::fd_wksp_new_anon(
                 combined_name.as_ptr() as *const i8,
-                page_sz,
+                requested_page_sz,
                 1, // sub_cnt
-                &page_cnt as *const u64,
+                &requested_page_cnt as *const u64,
                 &cpu_idx as *const u64,
                 0, // seed
                 (*self.inner).__bindgen_anon_1.part_max,
             );
 
             if wksp_join.is_null() {
-                return Err(crate::TopoError::SystemError);
+                let page_type = match requested_page_sz {
+                    x if x == sys::FD_SHMEM_NORMAL_PAGE_SZ as u64 => "normal (4KB)",
+                    x if x == sys::FD_SHMEM_HUGE_PAGE_SZ as u64 => "huge (2MB)",
+                    x if x == sys::FD_SHMEM_GIGANTIC_PAGE_SZ as u64 => "gigantic (1GB)",
+                    _ => "unknown",
+                };
+
+                panic!(
+                    "Failed to create anonymous workspace '{}' with {} pages.",
+                    wksp_name.to_str().unwrap_or("unknown"),
+                    page_type
+                );
             }
 
             (*self.inner).__bindgen_anon_1.wksp = wksp_join;

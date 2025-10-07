@@ -205,7 +205,11 @@ impl TopoBuilder {
     /// Anonymous workspaces exist only in memory and don't require
     /// setting up the filesystem for shared memory. They're also
     /// automatically cleaned up when the process exits.
-    pub fn build_anonymous(self, callbacks: *mut *mut ActiveTopoCallbacks) -> Result<Topo> {
+    pub fn build_anonymous(
+        self,
+        callbacks: *mut *mut ActiveTopoCallbacks,
+        page_sz: Option<crate::types::PageSize>,
+    ) -> Result<Topo> {
         let mut this = ManuallyDrop::new(self);
 
         unsafe {
@@ -213,7 +217,7 @@ impl TopoBuilder {
             for i in 0..(*this.inner).wksp_cnt {
                 let wksp_ptr = &mut (*this.inner).workspaces[i as usize];
                 let mut workspace = Workspace::from_raw(wksp_ptr);
-                workspace.create_anonymous(this.inner)?;
+                workspace.create_anonymous(this.inner, page_sz)?;
             }
 
             let topo = Topo::from_raw(this.inner, true);

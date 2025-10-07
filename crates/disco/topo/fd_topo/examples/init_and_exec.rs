@@ -2,8 +2,8 @@ use std::ffi::CStr;
 
 use fd_topo::{
     types::{ActiveObject, ActiveTile, ActiveTopology},
-    CpuTopology, ObjectCallbacks, Result, TileRunner, TileRunnerRegistry, Topo, TopoBuilder,
-    TopologyCallbacks,
+    CpuTopology, ObjectCallbacks, PageSize, Result, TileRunner, TileRunnerRegistry, Topo,
+    TopoBuilder, TopologyCallbacks,
 };
 
 const PROGNAME: &'static CStr = c"tachyon_fd";
@@ -116,7 +116,30 @@ fn main() -> Result<()> {
 
     let mut topo = if use_anonymous {
         println!("> [build] using anonymous wksps (mem-backed)");
-        builder.build_anonymous(callback_ptr)?
+        check_system_memory_availability();
+
+        let page_size =
+            std::env::var("FD_PAGE_SIZE")
+                .ok()
+                .and_then(|s| match s.to_lowercase().as_str() {
+                    "normal" | "4k" => Some(PageSize::Normal),
+                    "huge" | "2m" => Some(PageSize::Huge),
+                    "gigantic" | "1g" => Some(PageSize::Gigantic),
+                    _ => None,
+                });
+
+        if let Some(ref ps) = page_size {
+            let page_name = match ps {
+                PageSize::Normal => "normal (4KB)",
+                PageSize::Huge => "huge (2MB)",
+                PageSize::Gigantic => "gigantic (1GB)",
+            };
+            println!("   >> using {} pages (via FD_PAGE_SIZE)", page_name);
+        } else {
+            println!("   >> using topology default page sizes (set FD_PAGE_SIZE=normal for compatibility)");
+        }
+
+        builder.build_anonymous(callback_ptr, page_size)?
     } else {
         println!("> [build] using wksps (disk-backed)");
         builder.build(callback_ptr, false)?
@@ -527,4 +550,51 @@ unsafe extern "C" fn basic_footprint(
 
 unsafe extern "C" fn basic_align(_topo: *const ActiveTopology, _obj: *const ActiveObject) -> u64 {
     64
+}
+
+fn check_system_memory_availability() {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(meminfo) = std::fs::read_to_string("/proc/meminfo") {
+            let mut available_kb = 0;
+            let mut hugepages_total = 0;
+            let mut hugepages_free = 0;
+
+            for line in meminfo.lines() {
+                if line.starts_with("MemAvailable:") {
+                    if let Some(value) = line.split_whitespace().nth(1) {
+                        available_kb = value.parse::<u64>().unwrap_or(0);
+                    }
+                } else if line.starts_with("HugePages_Total:") {
+                    if let Some(value) = line.split_whitespace().nth(1) {
+                        hugepages_total = value.parse::<u64>().unwrap_or(0);
+                    }
+                } else if line.starts_with("HugePages_Free:") {
+                    if let Some(value) = line.split_whitespace().nth(1) {
+                        hugepages_free = value.parse::<u64>().unwrap_or(0);
+                    }
+                }
+            }
+
+            println!("   >> system memory: {}MB available", available_kb / 1024);
+            if hugepages_total > 0 {
+                println!(
+                    "   >> huge pages: {}/{} free (2MB each)",
+                    hugepages_free, hugepages_total
+                );
+            } else {
+                println!("   >> huge pages: not configured (will use normal pages)");
+            }
+
+            if available_kb < 100 * 1024 {
+                // Less than 100MB
+                println!("   >> WARNING: Low available memory ({}MB). Consider freeing memory or reducing topology size.", available_kb / 1024);
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        println!("   >> memory check not available on this platform");
+    }
 }

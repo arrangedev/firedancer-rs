@@ -33,6 +33,7 @@ pub use error::{Result, TopoError};
 pub use link::Link;
 pub use object::Object;
 pub use tile::{Tile, TileRunner, TileRunnerRegistry};
+pub use types::PageSize;
 pub use workspace::Workspace;
 
 use crate::{

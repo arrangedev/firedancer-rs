@@ -2,7 +2,7 @@ use std::ffi::CStr;
 
 use fd_topo::{
     types::{ActiveObject, ActiveTopology},
-    CpuTopology, ObjectCallbacks, Result, TopoBuilder, TopologyCallbacks,
+    CpuTopology, ObjectCallbacks, PageSize, Result, TopoBuilder, TopologyCallbacks,
 };
 
 const PROGNAME: &'static CStr = c"tachyon_fd";
@@ -112,7 +112,7 @@ fn main() -> Result<()> {
 
     let mut topo = if use_anonymous {
         println!("> [build] using anonymous wksps (mem-backed)");
-        builder.build_anonymous(callback_ptr)?
+        builder.build_anonymous(callback_ptr, Some(PageSize::Normal))?
     } else {
         println!("> [build] using wksps (disk-backed)");
         builder.build(callback_ptr, false)?

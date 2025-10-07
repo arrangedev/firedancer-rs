@@ -24,6 +24,14 @@ pub type TileAnonymousFn<R> = unsafe extern "C" fn() -> R;
 pub type TileRunnerFn<A, R> = unsafe extern "C" fn(A) -> R;
 pub type TileContextFn = unsafe extern "C" fn(*mut _TopoInternal, *mut _TileInternal);
 
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageSize {
+    Normal = sys::FD_SHMEM_NORMAL_PAGE_SZ,
+    Huge = sys::FD_SHMEM_HUGE_PAGE_SZ,
+    Gigantic = sys::FD_SHMEM_GIGANTIC_PAGE_SZ,
+}
+
 // #[repr(transparent)]
 // pub struct ActiveTopology(*mut _TopoInternal);
 
