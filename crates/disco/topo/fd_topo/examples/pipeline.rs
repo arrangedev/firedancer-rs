@@ -15,25 +15,29 @@ use fd_topo::{
 
 const PROGNAME: &'static CStr = c"sysmon_pipeline";
 
+// Workspace names (no specific limit, but keep reasonable)
 const METRICS_WKSP: &'static CStr = c"metrics";
-const PROCESSING_WKSP: &'static CStr = c"processing";
+const PROCESSING_WKSP: &'static CStr = c"proc";
 const OUTPUT_WKSP: &'static CStr = c"output";
 
-const CPUMEM_TILE: &'static CStr = c"cpumem";
-const DISK_TILE: &'static CStr = c"dsk";
-const NETWORK_TILE: &'static CStr = c"net";
-const PROCESSOR_TILE: &'static CStr = c"proc";
-const WRITER_TILE: &'static CStr = c"writer";
+// Tile names (6 character limit)
+const CPUMEM_TILE: &'static CStr = c"cpumem"; // 6 chars - OK
+const DISK_TILE: &'static CStr = c"disk"; // 4 chars - OK
+const NETWORK_TILE: &'static CStr = c"net"; // 3 chars - OK
+const PROCESSOR_TILE: &'static CStr = c"proc"; // 4 chars - OK
+const WRITER_TILE: &'static CStr = c"writer"; // 6 chars - OK
 
-const CPUMEM_LINK: &'static CStr = c"cm_pr";
-const DISK_LINK: &'static CStr = c"dsk_pr";
-const NETWORK_LINK: &'static CStr = c"net_pr";
-const PROCESSOR_LINK: &'static CStr = c"proc_wr";
+// Link names (no specific limit, but keep reasonable)
+const CPUMEM_LINK: &'static CStr = c"cm_to_pr";
+const DISK_LINK: &'static CStr = c"dk_to_pr";
+const NETWORK_LINK: &'static CStr = c"nt_to_pr";
+const PROCESSOR_LINK: &'static CStr = c"pr_to_wr";
 
-const CPUMEM_OBJECT: &'static CStr = c"cm_dat";
-const DISK_OBJECT: &'static CStr = c"dsk_dat";
-const NETWORK_OBJECT: &'static CStr = c"net_dat";
-const PROCESSOR_OBJECT: &'static CStr = c"cmp_dat";
+// Object names (12 character limit)
+const CPUMEM_OBJECT: &'static CStr = c"cpumem_data"; // 11 chars - OK
+const DISK_OBJECT: &'static CStr = c"disk_data"; // 9 chars - OK
+const NETWORK_OBJECT: &'static CStr = c"net_data"; // 8 chars - OK
+const PROCESSOR_OBJECT: &'static CStr = c"proc_data"; // 9 chars - OK
 
 // Mutable statics are generally a bad idea, but fuck it
 static mut PREV_CPU_METRICS: Option<CpuMemMetrics> = None;
@@ -98,7 +102,8 @@ struct AggregatedMetrics {
     io_wait_percent: f32,
 }
 
-const METRIC_OBJECTS: [&'static CStr; 4] = [c"cm_dat", c"dsk_dat", c"net_dat", c"cmp_dat"];
+const METRIC_OBJECTS: [&'static CStr; 4] =
+    [CPUMEM_OBJECT, DISK_OBJECT, NETWORK_OBJECT, PROCESSOR_OBJECT];
 
 const AUTO_OBJECTS: [&'static CStr; 6] = [
     c"tile",
@@ -187,7 +192,7 @@ fn create_workspaces(builder: &mut TopoBuilder) -> Result<()> {
     println!("   >> ✓ metrics_wksp");
 
     builder.add_wksp(PROCESSING_WKSP)?;
-    println!("   >> ✓ processing_wksp");
+    println!("   >> ✓ proc_wksp");
 
     builder.add_wksp(OUTPUT_WKSP)?;
     println!("   >> ✓ output_wksp");
@@ -199,17 +204,19 @@ fn create_workspaces(builder: &mut TopoBuilder) -> Result<()> {
 fn create_links(builder: &mut TopoBuilder) -> Result<()> {
     println!("> [link] creating links");
 
-    builder.add_link(CPUMEM_LINK, PROCESSING_WKSP, 512, 1024, 8)?;
-    println!("   >> ✓ link: cpumem_to_proc (depth: 512, mtu: 1024)");
+    // Links from metric collectors to processor (in metrics workspace for efficiency)
+    builder.add_link(CPUMEM_LINK, METRICS_WKSP, 512, 1024, 8)?;
+    println!("   >> ✓ link: cm_to_pr (depth: 512, mtu: 1024)");
 
-    builder.add_link(DISK_LINK, PROCESSING_WKSP, 512, 1024, 8)?;
-    println!("   >> ✓ link: disk_to_proc (depth: 512, mtu: 1024)");
+    builder.add_link(DISK_LINK, METRICS_WKSP, 512, 1024, 8)?;
+    println!("   >> ✓ link: dk_to_pr (depth: 512, mtu: 1024)");
 
-    builder.add_link(NETWORK_LINK, PROCESSING_WKSP, 512, 1024, 8)?;
-    println!("   >> ✓ link: network_to_proc (depth: 512, mtu: 1024)");
+    builder.add_link(NETWORK_LINK, METRICS_WKSP, 512, 1024, 8)?;
+    println!("   >> ✓ link: nt_to_pr (depth: 512, mtu: 1024)");
 
-    builder.add_link(PROCESSOR_LINK, OUTPUT_WKSP, 256, 2048, 4)?;
-    println!("   >> ✓ link: proc_to_writer (depth: 256, mtu: 2048)");
+    // Link from processor to writer (in processing workspace)
+    builder.add_link(PROCESSOR_LINK, PROCESSING_WKSP, 256, 2048, 4)?;
+    println!("   >> ✓ link: pr_to_wr (depth: 256, mtu: 2048)");
 
     println!("     >>> ✓ links created");
     Ok(())
@@ -246,13 +253,13 @@ fn create_tiles(builder: &mut TopoBuilder) -> Result<()> {
 
     builder.add_tile(
         PROCESSOR_TILE,
-        PROCESSING_WKSP,
-        PROCESSING_WKSP,
+        METRICS_WKSP, // Move processor to metrics workspace for efficient link access
+        METRICS_WKSP,
         Some(3),
         false,
         false,
     )?;
-    builder.add_object(PROCESSOR_OBJECT, PROCESSING_WKSP)?;
+    builder.add_object(PROCESSOR_OBJECT, METRICS_WKSP)?;
     println!("   >> ✓ processor (cpuid=3)");
 
     builder.add_tile(WRITER_TILE, OUTPUT_WKSP, OUTPUT_WKSP, Some(4), false, false)?;
@@ -265,11 +272,12 @@ fn create_tiles(builder: &mut TopoBuilder) -> Result<()> {
 fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
     println!("> [tile] wiring tiles");
 
+    // Wire metric collectors to processor (all in METRICS_WKSP)
     builder.add_tile_output(CPUMEM_TILE, 0, CPUMEM_LINK, 0)?;
     builder.add_tile_input(
         PROCESSOR_TILE,
         0,
-        PROCESSING_WKSP,
+        METRICS_WKSP, // Both tile and link are in metrics workspace
         CPUMEM_LINK,
         0,
         true,
@@ -277,21 +285,30 @@ fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
     )?;
 
     builder.add_tile_output(DISK_TILE, 0, DISK_LINK, 0)?;
-    builder.add_tile_input(PROCESSOR_TILE, 0, PROCESSING_WKSP, DISK_LINK, 0, true, true)?;
+    builder.add_tile_input(PROCESSOR_TILE, 0, METRICS_WKSP, DISK_LINK, 0, true, true)?;
 
     builder.add_tile_output(NETWORK_TILE, 0, NETWORK_LINK, 0)?;
     builder.add_tile_input(
         PROCESSOR_TILE,
         0,
-        PROCESSING_WKSP,
+        METRICS_WKSP, // Both tile and link are in metrics workspace
         NETWORK_LINK,
         0,
         true,
         true,
     )?;
 
+    // Wire processor to writer (cross-workspace: PROCESSING_WKSP -> OUTPUT_WKSP)
     builder.add_tile_output(PROCESSOR_TILE, 0, PROCESSOR_LINK, 0)?;
-    builder.add_tile_input(WRITER_TILE, 0, OUTPUT_WKSP, PROCESSOR_LINK, 0, true, true)?;
+    builder.add_tile_input(
+        WRITER_TILE,
+        0,
+        PROCESSING_WKSP,
+        PROCESSOR_LINK,
+        0,
+        true,
+        true,
+    )?;
 
     println!("   >> ✓ cpumem -> processor");
     println!("   >> ✓ disk -> processor");
@@ -751,10 +768,10 @@ unsafe extern "C" fn calculate_footprint(
     let obj_name = std::ffi::CStr::from_ptr((*obj).name.as_ptr());
 
     match obj_name.to_bytes() {
-        b"cm_dat" => std::mem::size_of::<CpuMemMetrics>() as u64,
-        b"dsk_dat" => std::mem::size_of::<DiskMetrics>() as u64,
-        b"net_dat" => std::mem::size_of::<NetworkMetrics>() as u64,
-        b"cmp_dat" => std::mem::size_of::<AggregatedMetrics>() as u64,
+        b"cpumem_data" => std::mem::size_of::<CpuMemMetrics>() as u64,
+        b"disk_data" => std::mem::size_of::<DiskMetrics>() as u64,
+        b"net_data" => std::mem::size_of::<NetworkMetrics>() as u64,
+        b"proc_data" => std::mem::size_of::<AggregatedMetrics>() as u64,
         b"tile" => 4096,
         b"metrics" => 8192,
         b"keyswitch" => 64,
@@ -772,10 +789,10 @@ unsafe extern "C" fn calculate_align(
     let obj_name = std::ffi::CStr::from_ptr((*obj).name.as_ptr());
 
     match obj_name.to_bytes() {
-        b"cm_dat" => std::mem::align_of::<CpuMemMetrics>() as u64,
-        b"dsk_dat" => std::mem::align_of::<DiskMetrics>() as u64,
-        b"net_dat" => std::mem::align_of::<NetworkMetrics>() as u64,
-        b"cmp_dat" => std::mem::align_of::<AggregatedMetrics>() as u64,
+        b"cpumem_data" => std::mem::align_of::<CpuMemMetrics>() as u64,
+        b"disk_data" => std::mem::align_of::<DiskMetrics>() as u64,
+        b"net_data" => std::mem::align_of::<NetworkMetrics>() as u64,
+        b"proc_data" => std::mem::align_of::<AggregatedMetrics>() as u64,
         b"mcache" | b"dcache" => 64, // cache line
         _ => 64,
     }
