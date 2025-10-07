@@ -149,6 +149,9 @@ fn create_links(builder: &mut TopoBuilder) -> Result<()> {
     builder.add_link(c"verify_pack", c"pack", 1024, 1024, 16)?;
     println!("   >> ✓ link: verify_pack (depth: 1024, mtu: 1024)");
 
+    builder.add_link(c"verify_pack", c"pack", 1024, 1024, 16)?;
+    println!("   >> ✓ link: verify_pack (depth: 1024, mtu: 1024)");
+
     builder.add_link(c"pack_bank", c"bank", 512, 4096, 8)?;
     println!("   >> ✓ link: pack_bank (depth: 512, mtu: 4096)");
 
