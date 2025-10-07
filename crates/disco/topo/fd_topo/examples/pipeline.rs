@@ -9,8 +9,8 @@ use std::{
 use fd_topo::{
     fd_debug, fd_info, fd_notice, fd_warn,
     types::{ActiveObject, ActiveTile, ActiveTopology},
-    CpuTopology, ObjectCallbacks, PageSize, Result, SandboxConfig, TileRunner, TileRunnerRegistry,
-    Topo, TopoBuilder, TopologyCallbacks,
+    CpuTopology, ObjectCallbacks, PageSize, Result, SandboxConfig, TileExecutionMode, TileRunner,
+    TileRunnerRegistry, Topo, TopoBuilder, TopologyCallbacks,
 };
 
 const PROGNAME: &'static CStr = c"sysmon_pipeline";
@@ -20,7 +20,6 @@ static mut PREV_CPU_METRICS: Option<CpuMemMetrics> = None;
 static mut PREV_DISK_METRICS: Option<DiskMetrics> = None;
 static mut PREV_NETWORK_METRICS: Option<NetworkMetrics> = None;
 
-// Metric data structures for inter-tile communication
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 struct CpuMemMetrics {
