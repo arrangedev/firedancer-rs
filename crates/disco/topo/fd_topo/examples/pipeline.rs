@@ -13,7 +13,7 @@ use fd_topo::{
     TileRunnerRegistry, Topo, TopoBuilder, TopologyCallbacks,
 };
 
-const PROGNAME: &'static CStr = c"sysmon_pipeline";
+const PROGNAME: &'static CStr = c"pipeline";
 
 // Workspace names (no specific limit, but keep reasonable)
 const METRICS_WKSP: &'static CStr = c"metrics";
@@ -115,6 +115,11 @@ const AUTO_OBJECTS: [&'static CStr; 6] = [
 ];
 
 fn main() -> Result<()> {
+    // Initialize the fd_topo system and logging
+    unsafe {
+        fd_topo::init(PROGNAME);
+    }
+
     let cpu_topo = match std::env::var("FD_CPU_METHOD").as_deref() {
         Ok("thin") => CpuTopology::new_simple(PROGNAME)?,
         Ok("full") => {
@@ -142,7 +147,7 @@ fn main() -> Result<()> {
         cpu_topo.numa_node_count()
     );
 
-    let mut builder = TopoBuilder::new(c"sysmon_pipeline")?;
+    let mut builder = TopoBuilder::new(c"pipeline")?;
 
     create_workspaces(&mut builder)?;
     create_links(&mut builder)?;
@@ -158,6 +163,12 @@ fn main() -> Result<()> {
     let use_anonymous = std::env::var("FD_USE_ANON_WKSP")
         .map(|v| v == "1" || v.to_lowercase() == "true")
         .unwrap_or(true);
+
+    println!(
+        "> [env] FD_USE_ANON_WKSP={:?}",
+        std::env::var("FD_USE_ANON_WKSP")
+    );
+    println!("> [build] use_anonymous={}", use_anonymous);
 
     let mut topo = if use_anonymous {
         println!("> [build] using anonymous wksps (mem-backed)");
