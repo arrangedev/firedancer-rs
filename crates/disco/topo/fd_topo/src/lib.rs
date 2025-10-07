@@ -21,6 +21,7 @@ pub mod error;
 pub mod link;
 pub mod object;
 pub mod tile;
+pub mod types;
 pub mod workspace;
 
 pub use builder::{CallbackRegistry, ObjectCallbacks, TopoBuilder};
@@ -28,8 +29,12 @@ pub use cpu_topo::CpuTopology;
 pub use error::{Result, TopoError};
 pub use link::Link;
 pub use object::Object;
-pub use tile::Tile;
+pub use tile::{Tile, TileRunner, TileRunnerRegistry};
 pub use workspace::Workspace;
+
+use crate::types::{
+    ActiveTile, ActiveTopology, TopoCallbackFn, _TileInternal, _TileRunnerInternal, _TopoInternal,
+};
 
 static INIT: Once = Once::new();
 
@@ -46,9 +51,6 @@ pub unsafe fn init(program_name: &'static CStr) {
 pub unsafe fn shutdown() {
     sys::fd_halt();
 }
-
-pub type TopoCallbackFn<R> =
-    unsafe extern "C" fn(topo: *const sys::fd_topo_t, obj: *const sys::fd_topo_obj_t) -> R;
 
 #[repr(C)]
 #[derive(Debug, Clone)]
@@ -116,7 +118,7 @@ pub const MAX_TILE_OUT_LINKS: usize = sys::FD_TOPO_MAX_TILE_OUT_LINKS as usize;
 pub const MAX_TILE_OBJECTS: usize = sys::FD_TOPO_MAX_TILE_OBJS as usize;
 
 pub struct Topo {
-    inner: *mut sys::fd_topo_t,
+    inner: *mut _TopoInternal,
     owned: bool,
 }
 
@@ -125,17 +127,17 @@ impl Topo {
     /// - `ptr` is a valid pointer to an initialized `fd_topo_t`
     /// - Memory pointed to by `ptr` remains valid for the lifetime of this `Topo`
     /// - If `owned` is true, this `Topo` will take ownership and free the memory on drop
-    pub unsafe fn from_raw(ptr: *mut sys::fd_topo_t, owned: bool) -> Self {
+    pub unsafe fn from_raw(ptr: *mut _TopoInternal, owned: bool) -> Self {
         Self { inner: ptr, owned }
     }
 
     /// SAFETY: returned pointer is valid only as long as this `Topo` exists.
-    pub fn as_ptr(&self) -> *const sys::fd_topo_t {
+    pub fn as_ptr(&self) -> *const _TopoInternal {
         self.inner
     }
 
     /// SAFETY: returned pointer is valid only as long as this `Topo` exists.
-    pub fn as_mut_ptr(&mut self) -> *mut sys::fd_topo_t {
+    pub fn as_mut_ptr(&mut self) -> *mut _TopoInternal {
         self.inner
     }
 
@@ -290,7 +292,7 @@ impl Topo {
                     continue;
                 }
 
-                let obj_name = core::ffi::CStr::from_ptr(obj.name.as_ptr());
+                let obj_name = CStr::from_ptr(obj.name.as_ptr());
                 let obj_name_str = obj_name.to_str().unwrap_or("");
 
                 match obj_name_str {
@@ -361,13 +363,23 @@ impl Topo {
 
     #[cfg(target_os = "linux")]
     #[inline]
-    pub fn run_tile(&mut self, tile_id: usize, uid: u32, gid: u32) -> Result<()> {
+    pub fn run_tile(
+        &mut self,
+        tile_id: usize,
+        uid: u32,
+        gid: u32,
+        tile_runner: Option<&_TileRunnerInternal>,
+    ) -> Result<()> {
         if tile_id >= self.tile_cnt() {
             return Err(TopoError::NotFound);
         }
 
         unsafe {
-            let tile_ptr = &mut (*self.inner).tiles[tile_id] as *mut sys::fd_topo_tile_t;
+            let tile_ptr = &mut (*self.inner).tiles[tile_id] as *mut _TileInternal;
+            let runner_ptr = tile_runner
+                .map(|r| r as *const _TileRunnerInternal)
+                .unwrap_or(core::ptr::null());
+
             sys::fd_topo_run_tile(
                 self.inner,
                 tile_ptr,
@@ -379,7 +391,7 @@ impl Topo {
                 -1,                    // no special fd
                 core::ptr::null_mut(), // no wait
                 core::ptr::null_mut(), // no debugger
-                core::ptr::null_mut(), // tile_run function pointer - will use default
+                runner_ptr as *mut _TileRunnerInternal,
             );
         }
 
@@ -388,9 +400,26 @@ impl Topo {
 
     #[cfg(target_os = "linux")]
     #[inline]
-    pub fn run_all_tiles(&mut self, uid: u32, gid: u32) -> Result<()> {
+    pub fn run_all_tiles(
+        &mut self,
+        uid: u32,
+        gid: u32,
+        tile_registry: &TileRunnerRegistry,
+    ) -> Result<()> {
         for tile_id in 0..self.tile_cnt() {
-            self.run_tile(tile_id, uid, gid)?;
+            let tile_name = unsafe {
+                let tile_ptr = &(*self.inner).tiles[tile_id];
+                CStr::from_ptr(tile_ptr.name.as_ptr())
+                    .to_str()
+                    .unwrap_or("")
+            };
+
+            let runner = tile_registry.find_runner(tile_name);
+            if runner.is_none() {
+                continue;
+            }
+
+            self.run_tile(tile_id, uid, gid, runner)?;
         }
         Ok(())
     }
@@ -402,7 +431,7 @@ impl Topo {
         }
 
         unsafe {
-            let tile_ptr = &mut (*self.inner).tiles[tile_id] as *mut sys::fd_topo_tile_t;
+            let tile_ptr = &mut (*self.inner).tiles[tile_id] as *mut _TileInternal;
             sys::fd_topo_join_tile_workspaces(self.inner, tile_ptr);
         }
 
@@ -416,7 +445,7 @@ impl Topo {
         }
 
         unsafe {
-            let tile_ptr = &mut (*self.inner).tiles[tile_id] as *mut sys::fd_topo_tile_t;
+            let tile_ptr = &mut (*self.inner).tiles[tile_id] as *mut _TileInternal;
             sys::fd_topo_fill_tile(self.inner, tile_ptr);
         }
 

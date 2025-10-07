@@ -1,9 +1,8 @@
 use std::ffi::CStr;
 
 use fd_topo::{
-    types::{ActiveObject, ActiveTile, ActiveTopology},
-    CallbackRegistry, CpuTopology, ObjectCallbacks, Result, TileRunner, TileRunnerRegistry,
-    TopoBuilder,
+    types::{ActiveObject, ActiveTopology},
+    CallbackRegistry, CpuTopology, ObjectCallbacks, Result, TopoBuilder,
 };
 
 const PROGNAME: &'static CStr = c"tachyon_fd";
@@ -104,11 +103,8 @@ fn main() -> Result<()> {
     // auto layout won't work on some machines, and we've already manually laid out topology
     // builder.auto_layout(false)?;
 
-    let mut callbacks = create_callbacks()?;
+    let mut callbacks = init_callbacks()?;
     let callback_ptr = callbacks.finalize()?;
-
-    let mut tile_registry = create_tile_runners()?;
-    tile_registry.finalize()?;
 
     let use_anonymous = std::env::var("FD_USE_ANON_WKSP")
         .map(|v| v == "1" || v.to_lowercase() == "true")
@@ -122,8 +118,8 @@ fn main() -> Result<()> {
         builder.build(callback_ptr, false)?
     };
 
-    analyze_topology(&topo)?;
-    simulate_execution(&mut topo, &tile_registry)?;
+    inspect_topology(&topo)?;
+    commit_topology(&mut topo)?;
 
     Ok(())
 }
@@ -264,7 +260,7 @@ fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
     Ok(())
 }
 
-fn analyze_topology(topo: &fd_topo::Topo) -> Result<()> {
+fn inspect_topology(topo: &fd_topo::Topo) -> Result<()> {
     println!("> [topo] analyzing structure");
 
     println!(
@@ -305,7 +301,7 @@ fn analyze_topology(topo: &fd_topo::Topo) -> Result<()> {
     Ok(())
 }
 
-fn simulate_execution(topo: &mut fd_topo::Topo, _tile_registry: &TileRunnerRegistry) -> Result<()> {
+fn commit_topology(topo: &mut fd_topo::Topo) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
         println!("> [wksp] joining workspaces: {}", topo.workspace_cnt());
@@ -336,15 +332,6 @@ fn simulate_execution(topo: &mut fd_topo::Topo, _tile_registry: &TileRunnerRegis
         }
 
         topo.print_to_log();
-
-        println!("   >> starting tile exec");
-        let uid = unsafe { libc::getuid() };
-        let gid = unsafe { libc::getgid() };
-
-        match topo.run_all_tiles(uid, gid, &_tile_registry) {
-            Ok(()) => println!("   >> ✓ tiles started"),
-            Err(e) => eprintln!("   >> ✗ err={e:?}"),
-        }
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -360,171 +347,20 @@ fn simulate_execution(topo: &mut fd_topo::Topo, _tile_registry: &TileRunnerRegis
     Ok(())
 }
 
-fn create_tile_runners() -> Result<TileRunnerRegistry> {
-    let mut registry = TileRunnerRegistry::new();
-
-    registry.add_runner(TileRunner::new(c"net", net_tile_run))?;
-    registry.add_runner(TileRunner::new(c"quic", quic_tile_run))?;
-    registry.add_runner(TileRunner::new(c"verify", verify_tile_run))?;
-    registry.add_runner(TileRunner::new(c"pack", pack_tile_run))?;
-    registry.add_runner(TileRunner::new(c"bank", bank_tile_run))?;
-    registry.add_runner(TileRunner::new(c"metric", metric_tile_run))?;
-
-    Ok(registry)
-}
-
-unsafe extern "C" fn net_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
-    println!("> [net] {} starting", (*tile).id);
-
-    for i in 0..10 {
-        std::thread::sleep(std::time::Duration::from_millis(100));
-        if i % 3 == 0 {
-            println!(
-                "    >> {}: processing packets (iteration {})",
-                (*tile).id,
-                i
-            );
-        }
-    }
-
-    println!(
-        "      >>> {} (kind {}) completed",
-        (*tile).id,
-        (*tile).kind_id
-    );
-}
-
-unsafe extern "C" fn quic_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
-    println!("> [quic] {} starting", (*tile).id);
-
-    for i in 0..8 {
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        if i % 2 == 0 {
-            println!(
-                "    >> {}: processing connections (iteration {})",
-                (*tile).id,
-                i
-            );
-        }
-    }
-
-    println!(
-        "      >>> {} (kind {}) completed",
-        (*tile).id,
-        (*tile).kind_id
-    );
-}
-
-unsafe extern "C" fn verify_tile_run(topo: *mut ActiveTopology, tile: *mut ActiveTile) {
-    println!(
-        "> [verify] {} (kind {}) starting",
-        (*tile).id,
-        (*tile).kind_id
-    );
-
-    for i in 0..6 {
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        if i % 2 == 0 {
-            println!(
-                "    >> {}: verifying signatures (iteration {})",
-                (*tile).id,
-                i
-            );
-        }
-    }
-
-    println!(
-        "      >>> {} (kind {}) completed",
-        (*tile).id,
-        (*tile).kind_id
-    );
-}
-
-unsafe extern "C" fn pack_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
-    println!("> [pack] {} starting", (*tile).id);
-
-    for i in 0..5 {
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        println!(
-            "    >> {}: packing transactions (iteration {})",
-            (*tile).id,
-            i
-        );
-    }
-
-    println!(
-        "      >>> {} (kind {}) completed",
-        (*tile).id,
-        (*tile).kind_id
-    );
-}
-
-unsafe extern "C" fn bank_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
-    println!(
-        "> [bank] {} (kind {}) starting",
-        (*tile).id,
-        (*tile).kind_id
-    );
-
-    for i in 0..4 {
-        std::thread::sleep(std::time::Duration::from_millis(400));
-        println!(
-            "    >> {} (kind {}): processing operations (iteration {})",
-            (*tile).id,
-            (*tile).kind_id,
-            i
-        );
-    }
-
-    println!(
-        "      >>> {} (kind {}) completed",
-        (*tile).id,
-        (*tile).kind_id
-    );
-}
-
-unsafe extern "C" fn metric_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
-    println!("> [metric] {} starting", (*tile).id);
-
-    for i in 0..12 {
-        std::thread::sleep(std::time::Duration::from_millis(250));
-        if i % 4 == 0 {
-            println!(
-                "    >> {}: collecting metrics (iteration {})",
-                (*tile).id,
-                i
-            );
-        }
-    }
-
-    println!(
-        "      >>> {} (kind {}) completed",
-        (*tile).id,
-        (*tile).kind_id
-    );
-}
-
-fn create_callbacks() -> Result<CallbackRegistry> {
+fn init_callbacks() -> Result<CallbackRegistry> {
     let mut registry = CallbackRegistry::new();
 
     for obj_name in ALL_OBJECTS.iter().chain(AUTO_OBJECTS.iter()) {
-        registry.add_callback(ObjectCallbacks::new(
-            *obj_name,
-            basic_footprint,
-            basic_align,
-        ))?;
+        registry.add_callback(ObjectCallbacks::new(*obj_name, fp, align))?;
     }
 
     Ok(registry)
 }
 
-unsafe extern "C" fn basic_footprint(
-    _topo: *const ActiveTopology,
-    _obj: *const ActiveObject,
-) -> u64 {
+unsafe extern "C" fn fp(_topo: *const ActiveTopology, _obj: *const ActiveObject) -> u64 {
     4096
 }
 
-unsafe extern "C" fn basic_align(_topo: *const ActiveTopology, _obj: *const ActiveObject) -> u64 {
+unsafe extern "C" fn align(_topo: *const ActiveTopology, _obj: *const ActiveObject) -> u64 {
     64
 }

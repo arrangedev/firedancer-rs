@@ -1,6 +1,6 @@
 use core::ffi::CStr;
 
-use crate::Result;
+use crate::{types::_CpusInternal, Result};
 use fd_topo_sys as sys;
 
 #[derive(Debug, Clone)]
@@ -14,7 +14,7 @@ pub struct Cpu {
 
 #[repr(C)]
 pub struct CpuTopology {
-    inner: sys::fd_topo_cpus_t,
+    inner: _CpusInternal,
 }
 
 impl CpuTopology {
@@ -27,7 +27,7 @@ impl CpuTopology {
     ) -> Result<Self> {
         unsafe { crate::init(progname) };
 
-        let mut cpus = unsafe { core::mem::zeroed::<sys::fd_topo_cpus_t>() };
+        let mut cpus = unsafe { core::mem::zeroed::<_CpusInternal>() };
 
         cpus.cpu_cnt = cpu_count as u64;
         cpus.numa_node_cnt = numa_node_count as u64;

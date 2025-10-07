@@ -1,3 +1,4 @@
+use crate::types::{ActiveTopoCallbacks, _TopoCallbacksInternal, _TopoInternal};
 use crate::{Result, Topo, TopoError};
 use crate::{TopoCallbackFn, Workspace};
 use core::ffi::CStr;
@@ -51,9 +52,9 @@ impl ObjectCallbacks {
 pub struct CallbackRegistry {
     callbacks: Vec<ObjectCallbacks>,
     // Keep the C-compatible structures alive
-    c_callbacks: Vec<sys::fd_topo_obj_callbacks_t>,
+    c_callbacks: Vec<_TopoCallbacksInternal>,
     c_names: Vec<*const i8>,
-    c_callback_ptrs: Vec<*mut sys::fd_topo_obj_callbacks_t>,
+    c_callback_ptrs: Vec<*mut _TopoCallbacksInternal>,
 }
 
 impl CallbackRegistry {
@@ -76,7 +77,7 @@ impl CallbackRegistry {
     /// Finalize the registry and return a pointer suitable for fd_topob_finish
     ///
     /// This must be called after all callbacks are added and before calling build()
-    pub fn finalize(&mut self) -> Result<*mut *mut sys::fd_topo_obj_callbacks_t> {
+    pub fn finalize(&mut self) -> Result<*mut *mut ActiveTopoCallbacks> {
         self.c_callbacks.clear();
         self.c_names.clear();
         self.c_callback_ptrs.clear();
@@ -84,7 +85,7 @@ impl CallbackRegistry {
         for callback in &self.callbacks {
             let c_name = callback.name;
 
-            let c_callback = sys::fd_topo_obj_callbacks_t {
+            let c_callback = _TopoCallbacksInternal {
                 name: c_name.as_ptr() as *const i8,
                 footprint: Some(callback.footprint),
                 align: Some(callback.align),
@@ -116,15 +117,15 @@ impl Default for CallbackRegistry {
 
 #[repr(C)]
 pub struct TopoBuilder {
-    inner: *mut sys::fd_topo_t,
+    inner: *mut _TopoInternal,
     _backing: ptr::NonNull<u8>,
 }
 
 impl TopoBuilder {
     #[inline]
     pub fn new(app_name: &'static CStr) -> Result<Self> {
-        let topo_size = mem::size_of::<sys::fd_topo_t>();
-        let align = mem::align_of::<sys::fd_topo_t>();
+        let topo_size = mem::size_of::<_TopoInternal>();
+        let align = mem::align_of::<_TopoInternal>();
 
         let mem = unsafe {
             std::alloc::alloc(std::alloc::Layout::from_size_align(topo_size, align).unwrap())
@@ -282,7 +283,7 @@ impl TopoBuilder {
 
     pub fn build(
         self,
-        callbacks: *mut *mut sys::fd_topo_obj_callbacks_t,
+        callbacks: *mut *mut ActiveTopoCallbacks,
         update_existing: bool,
     ) -> Result<Topo> {
         let mut this = ManuallyDrop::new(self);
@@ -312,10 +313,7 @@ impl TopoBuilder {
     /// Anonymous workspaces exist only in memory and don't require
     /// setting up the filesystem for shared memory. They're also
     /// automatically cleaned up when the process exits.
-    pub fn build_anonymous(
-        self,
-        callbacks: *mut *mut sys::fd_topo_obj_callbacks_t,
-    ) -> Result<Topo> {
+    pub fn build_anonymous(self, callbacks: *mut *mut ActiveTopoCallbacks) -> Result<Topo> {
         let mut this = ManuallyDrop::new(self);
 
         unsafe {
