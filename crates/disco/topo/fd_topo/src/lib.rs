@@ -19,7 +19,7 @@ use std::ffi::CString;
 use std::sync::Once;
 
 #[cfg(feature = "logging")]
-use fd_log::{debug, error, info, warn};
+use fd_log::SystemLogBuilder;
 
 pub mod builder;
 pub mod cpu_topo;
@@ -65,6 +65,17 @@ pub unsafe fn init(program_name: &'static CStr) {
         let mut argc = 1i32;
         let mut argv = argv_array.as_mut_ptr();
         sys::fd_boot(&mut argc, &mut argv);
+
+        #[cfg(feature = "logging")]
+        {
+            let app_name = CStr::from_ptr(program_name).to_str().unwrap_or("fd_topo");
+            let _ = SystemLogBuilder::default()
+                .with_app(app_name)
+                .with_stderr_level(fd_log::LogLevel::Info)
+                .with_logfile_level(fd_log::LogLevel::Debug)
+                .with_colorize(true)
+                .init();
+        }
     });
 }
 
@@ -455,13 +466,13 @@ impl Topo {
             let result = unsafe { libc::waitpid(child_pid, &mut status as *mut i32, 0) };
 
             if result == -1 {
-                warn!(
+                fd_warn!(
                     "Failed to wait for tile-{}: {}",
                     tile_name,
                     std::io::Error::last_os_error()
                 );
             } else if status != 0 {
-                warn!("Tile {} exited with status: {}", tile_name, status);
+                fd_warn!("Tile {} exited with status: {}", tile_name, status);
             }
         }
 
@@ -538,7 +549,7 @@ macro_rules! noop {
 }
 
 #[macro_export]
-macro_rules! debug {
+macro_rules! fd_debug {
         ($($arg:tt)*) => {
             #[cfg(feature = "logging")]
             {
@@ -552,7 +563,7 @@ macro_rules! debug {
     }
 
 #[macro_export]
-macro_rules! info {
+macro_rules! fd_info {
         ($($arg:tt)*) => {
             #[cfg(feature = "logging")]
             {
@@ -566,7 +577,7 @@ macro_rules! info {
     }
 
 #[macro_export]
-macro_rules! notice {
+macro_rules! fd_notice {
         ($($arg:tt)*) => {
             #[cfg(feature = "logging")]
             {
@@ -576,11 +587,11 @@ macro_rules! notice {
     }
 
 #[macro_export]
-macro_rules! warn {
+macro_rules! fd_warn {
         ($($arg:tt)*) => {
             #[cfg(feature = "logging")]
             {
-                fd_log::fd_log_warn!($($arg)*)
+                fd_log::fd_log_warning!($($arg)*)
             }
             #[cfg(not(feature = "logging"))]
             {
@@ -590,7 +601,7 @@ macro_rules! warn {
     }
 
 #[macro_export]
-macro_rules! error {
+macro_rules! fd_error {
         ($($arg:tt)*) => {
             #[cfg(feature = "logging")]
             {

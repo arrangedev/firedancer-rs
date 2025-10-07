@@ -1,10 +1,10 @@
 use std::{ffi::CStr, thread::sleep, time::Duration};
 
 use fd_topo::{
-    debug, info, notice,
+    fd_info, fd_notice,
     types::{ActiveObject, ActiveTile, ActiveTopology},
-    warn, CpuTopology, ObjectCallbacks, PageSize, Result, SandboxConfig, TileExecutionMode,
-    TileRunner, TileRunnerRegistry, Topo, TopoBuilder, TopologyCallbacks,
+    CpuTopology, ObjectCallbacks, PageSize, Result, SandboxConfig, TileRunner, TileRunnerRegistry,
+    Topo, TopoBuilder, TopologyCallbacks,
 };
 
 const PROGNAME: &'static CStr = c"tachyon_fd";
@@ -455,13 +455,13 @@ fn create_tile_runners() -> Result<TileRunnerRegistry> {
 }
 
 unsafe extern "C" fn net_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
-    notice!("> [net] {} starting", (*tile).id);
+    fd_notice!("> [net] {} starting", (*tile).id);
 
     let mut iteration = 0u64;
     loop {
         sleep(Duration::from_millis(100));
         if iteration % 30 == 0 {
-            info!(
+            fd_info!(
                 "    >> {}: processing packets (iteration {})",
                 (*tile).id,
                 iteration
@@ -472,13 +472,13 @@ unsafe extern "C" fn net_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveT
 }
 
 unsafe extern "C" fn quic_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
-    notice!("> [quic] {} starting", (*tile).id);
+    fd_notice!("> [quic] {} starting", (*tile).id);
 
     let mut iteration = 0u64;
     loop {
         sleep(Duration::from_millis(150));
         if iteration % 20 == 0 {
-            info!(
+            fd_info!(
                 "    >> {}: processing connections (iteration {})",
                 (*tile).id,
                 iteration
@@ -489,7 +489,7 @@ unsafe extern "C" fn quic_tile_run(_topo: *mut ActiveTopology, tile: *mut Active
 }
 
 unsafe extern "C" fn verify_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
-    notice!(
+    fd_notice!(
         "> [verify] {} (kind {}) starting",
         (*tile).id,
         (*tile).kind_id
@@ -499,7 +499,7 @@ unsafe extern "C" fn verify_tile_run(_topo: *mut ActiveTopology, tile: *mut Acti
     loop {
         sleep(Duration::from_millis(200));
         if iteration % 15 == 0 {
-            info!(
+            fd_info!(
                 "    >> {}: verifying signatures (iteration {})",
                 (*tile).id,
                 iteration
@@ -510,13 +510,13 @@ unsafe extern "C" fn verify_tile_run(_topo: *mut ActiveTopology, tile: *mut Acti
 }
 
 unsafe extern "C" fn pack_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
-    notice!("> [pack] {} starting", (*tile).id);
+    fd_notice!("> [pack] {} starting", (*tile).id);
 
     let mut iteration = 0u64;
     loop {
         sleep(Duration::from_millis(300));
         if iteration % 10 == 0 {
-            info!(
+            fd_info!(
                 "    >> {}: packing transactions (iteration {})",
                 (*tile).id,
                 iteration
@@ -527,7 +527,7 @@ unsafe extern "C" fn pack_tile_run(_topo: *mut ActiveTopology, tile: *mut Active
 }
 
 unsafe extern "C" fn bank_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
-    notice!(
+    fd_notice!(
         "> [bank] {} (kind {}) starting",
         (*tile).id,
         (*tile).kind_id
@@ -537,7 +537,7 @@ unsafe extern "C" fn bank_tile_run(_topo: *mut ActiveTopology, tile: *mut Active
     loop {
         sleep(Duration::from_millis(400));
         if iteration % 7 == 0 {
-            info!(
+            fd_info!(
                 "    >> {} (kind {}): processing operations (iteration {})",
                 (*tile).id,
                 (*tile).kind_id,
@@ -549,13 +549,13 @@ unsafe extern "C" fn bank_tile_run(_topo: *mut ActiveTopology, tile: *mut Active
 }
 
 unsafe extern "C" fn metric_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
-    notice!("> [metric] {} starting", (*tile).id);
+    fd_notice!("> [metric] {} starting", (*tile).id);
 
     let mut iteration = 0u64;
     loop {
         sleep(Duration::from_millis(250));
         if iteration % 12 == 0 {
-            info!(
+            fd_info!(
                 "    >> {}: collecting metrics (iteration {})",
                 (*tile).id,
                 iteration

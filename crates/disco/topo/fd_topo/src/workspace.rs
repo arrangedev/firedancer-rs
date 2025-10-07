@@ -2,7 +2,7 @@ use core::ffi::CStr;
 use fd_topo_sys as sys;
 
 use crate::{
-    error,
+    error, fd_error,
     types::{PageSize, _TopoInternal, _WorkspaceInternal},
 };
 
@@ -87,7 +87,7 @@ impl Workspace {
                     _ => "unknown",
                 };
 
-                error!(
+                fd_error!(
                     "Failed to create anonymous workspace '{}' with {} pages.",
                     wksp_name.to_str().unwrap_or("unknown"),
                     _page_type
