@@ -19,7 +19,14 @@ const BANK_NAMES: [(&'static CStr, &'static CStr); 2] = [
 const METRIC_TILE_LINKS: [&'static CStr; 5] = [c"net", c"quic", c"verify", c"pack", c"bank"];
 
 // created by fd_topob_tile for each tile, fd_topob_link for each link
-const AUTO_OBJECTS: [&'static CStr; 5] = [c"tile", c"metrics", c"keyswitch", c"mcache", c"dcache"];
+const AUTO_OBJECTS: [&'static CStr; 6] = [
+    c"tile",
+    c"metrics",
+    c"keyswitch",
+    c"mcache",
+    c"dcache",
+    c"fseq",
+];
 
 const ALL_OBJECTS: [&'static CStr; 13] = [
     c"net_rx_buf",
@@ -198,10 +205,12 @@ fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
 
     for i in 0..2 {
         builder.add_tile_input(c"verify", i, c"pack", c"quic_verify", 0, true, true)?;
-        builder.add_tile_output(c"verify", i, c"verify_pack", 0)?;
+        builder.add_tile_output(c"verify", i, c"verify_pack", i)?; // Use different link_kind_id for each verify tile
     }
 
-    builder.add_tile_input(c"pack", 0, c"pack", c"verify_pack", 0, true, true)?;
+    for i in 0..2 {
+        builder.add_tile_input(c"pack", 0, c"pack", c"verify_pack", i, true, true)?;
+    }
     builder.add_tile_output(c"pack", 0, c"pack_bank", 0)?;
 
     for i in 0..2 {
