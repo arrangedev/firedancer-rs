@@ -490,6 +490,30 @@ void* fd_topo_obj_laddr__extern(fd_topo_t const * topo, ulong obj_id) {{
 void* fd_metrics_new__extern(void* shmem, ulong in_link_cnt, ulong out_link_consumer_cnt) {{
     return fd_metrics_new(shmem, in_link_cnt, out_link_consumer_cnt);
 }}
+
+ulong fd_mcache_seq_query__extern(ulong const * seq) {{
+    return fd_mcache_seq_query(seq);
+}}
+
+ulong fd_mcache_query__extern(fd_frag_meta_t const * mcache, ulong depth, ulong seq_query) {{
+    return fd_mcache_query(mcache, depth, seq_query);
+}}
+
+void fd_mcache_seq_update__extern(ulong * seq, ulong seq_update) {{
+    fd_mcache_seq_update(seq, seq_update);
+}}
+
+ulong fd_dcache_compact_chunk0__extern(fd_topo_t const * topo, void const * dcache) {{
+    return fd_dcache_compact_chunk0(topo, dcache);
+}}
+
+ulong fd_frag_meta_ctl__extern(ulong som, ulong eom, ulong err, ulong filter) {{
+    return fd_frag_meta_ctl(som, eom, err, filter);
+}}
+
+void fd_mcache_publish__extern(void * mcache, ulong depth, ulong seq, ulong sig, ulong chunk, ulong sz, ulong ctl, ulong tsorig, ulong tspub) {{
+    fd_mcache_publish(mcache, depth, seq, sig, chunk, sz, ctl, tsorig, tspub);
+}}
 "#,
         topo_header_path.canonicalize().unwrap().display(),
         disco_path
