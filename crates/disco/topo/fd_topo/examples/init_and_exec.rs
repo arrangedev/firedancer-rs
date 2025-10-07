@@ -149,11 +149,10 @@ fn main() -> Result<()> {
 
     analyze_topology(&topo)?;
 
-    // Configure sandboxing - disabled by default for compatibility
     let sandbox_config = match std::env::var("FD_SANDBOX") {
         Ok(val) if val == "1" || val.to_lowercase() == "true" => {
             println!("   >> sandboxing enabled (via FD_SANDBOX)");
-            SandboxConfig::enabled().with_stdio() // Allow stdio for debugging
+            SandboxConfig::enabled().with_stdio()
         }
         _ => {
             println!("   >> sandboxing disabled (set FD_SANDBOX=1 to enable)");

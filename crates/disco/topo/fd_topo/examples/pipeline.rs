@@ -16,7 +16,8 @@ use fd_topo::{
 const PROGNAME: &'static CStr = c"pipeline";
 
 // Workspace names (no specific limit, but keep reasonable)
-const METRICS_WKSP: &'static CStr = c"metrics";
+const COLLECTOR_WKSP: &'static CStr = c"collect";
+const METRICS_WKSP: &'static CStr = c"metric";
 const PROCESSING_WKSP: &'static CStr = c"proc";
 const OUTPUT_WKSP: &'static CStr = c"output";
 
@@ -144,7 +145,7 @@ fn main() -> Result<()> {
 
     let mut builder = TopoBuilder::new(c"pipeline")?;
 
-    create_workspaces(&mut builder)?;
+    create_wksps(&mut builder)?;
     create_links(&mut builder)?;
     create_tiles(&mut builder)?;
     wire_topology(&mut builder)?;
@@ -190,7 +191,7 @@ fn main() -> Result<()> {
         builder.build(callback_ptr, false)?
     };
 
-    analyze_topology(&topo)?;
+    verify_layout(&topo)?;
 
     let sandbox_config = match std::env::var("FD_SANDBOX") {
         Ok(val) if val == "1" || val.to_lowercase() == "true" => {
@@ -203,22 +204,25 @@ fn main() -> Result<()> {
         }
     };
 
-    simulate_execution(&mut topo, &tile_registry, &sandbox_config)?;
+    exec(&mut topo, &tile_registry, &sandbox_config)?;
 
     Ok(())
 }
 
-fn create_workspaces(builder: &mut TopoBuilder) -> Result<()> {
+fn create_wksps(builder: &mut TopoBuilder) -> Result<()> {
     println!("> [wksp] creating workspaces");
 
-    builder.add_wksp(METRICS_WKSP)?;
-    println!("   >> ✓ metrics_wksp");
+    builder.add_wksp(COLLECTOR_WKSP)?;
+    println!("   >> ✓ collect_wksp");
 
     builder.add_wksp(PROCESSING_WKSP)?;
     println!("   >> ✓ proc_wksp");
 
     builder.add_wksp(OUTPUT_WKSP)?;
     println!("   >> ✓ output_wksp");
+
+    builder.add_wksp(METRICS_WKSP)?;
+    println!("   >> ✓ metric_wksp");
 
     println!("     >>> ✓ wksps created");
     Ok(())
@@ -227,13 +231,13 @@ fn create_workspaces(builder: &mut TopoBuilder) -> Result<()> {
 fn create_links(builder: &mut TopoBuilder) -> Result<()> {
     println!("> [link] creating links");
 
-    builder.add_link(CPUMEM_LINK, METRICS_WKSP, 512, 1024, 8)?;
+    builder.add_link(CPUMEM_LINK, COLLECTOR_WKSP, 512, 1024, 8)?;
     println!("   >> ✓ link: cm_to_pr (depth: 512, mtu: 1024)");
 
-    builder.add_link(DISK_LINK, METRICS_WKSP, 512, 1024, 8)?;
+    builder.add_link(DISK_LINK, COLLECTOR_WKSP, 512, 1024, 8)?;
     println!("   >> ✓ link: dk_to_pr (depth: 512, mtu: 1024)");
 
-    builder.add_link(NETWORK_LINK, METRICS_WKSP, 512, 1024, 8)?;
+    builder.add_link(NETWORK_LINK, COLLECTOR_WKSP, 512, 1024, 8)?;
     println!("   >> ✓ link: nt_to_pr (depth: 512, mtu: 1024)");
 
     builder.add_link(PROCESSOR_LINK, PROCESSING_WKSP, 256, 2048, 4)?;
@@ -248,42 +252,56 @@ fn create_tiles(builder: &mut TopoBuilder) -> Result<()> {
 
     builder.add_tile(
         CPUMEM_TILE,
-        METRICS_WKSP,
+        COLLECTOR_WKSP,
         METRICS_WKSP,
         Some(0),
         false,
         false,
     )?;
-    builder.add_object(CPUMEM_OBJECT, METRICS_WKSP)?;
+    builder.add_object(CPUMEM_OBJECT, COLLECTOR_WKSP)?;
     println!("   >> ✓ cpumem (cpuid=0)");
 
-    builder.add_tile(DISK_TILE, METRICS_WKSP, METRICS_WKSP, Some(1), false, false)?;
-    builder.add_object(DISK_OBJECT, METRICS_WKSP)?;
+    builder.add_tile(
+        DISK_TILE,
+        COLLECTOR_WKSP,
+        METRICS_WKSP,
+        Some(1),
+        false,
+        false,
+    )?;
+    builder.add_object(DISK_OBJECT, COLLECTOR_WKSP)?;
     println!("   >> ✓ disk (cpuid=1)");
 
     builder.add_tile(
         NETWORK_TILE,
-        METRICS_WKSP,
+        COLLECTOR_WKSP,
         METRICS_WKSP,
         Some(2),
         false,
         false,
     )?;
-    builder.add_object(NETWORK_OBJECT, METRICS_WKSP)?;
+    builder.add_object(NETWORK_OBJECT, COLLECTOR_WKSP)?;
     println!("   >> ✓ network (cpuid=2)");
 
     builder.add_tile(
         PROCESSOR_TILE,
-        METRICS_WKSP,
+        PROCESSING_WKSP,
         METRICS_WKSP,
         Some(3),
         false,
         false,
     )?;
-    builder.add_object(PROCESSOR_OBJECT, METRICS_WKSP)?;
+    builder.add_object(PROCESSOR_OBJECT, PROCESSING_WKSP)?;
     println!("   >> ✓ processor (cpuid=3)");
 
-    builder.add_tile(WRITER_TILE, OUTPUT_WKSP, OUTPUT_WKSP, Some(4), false, false)?;
+    builder.add_tile(
+        WRITER_TILE,
+        OUTPUT_WKSP,
+        METRICS_WKSP,
+        Some(4),
+        false,
+        false,
+    )?;
     println!("   >> ✓ writer (cpuid=4)");
 
     println!("     >>> ✓ tiles created");
@@ -294,24 +312,32 @@ fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
     println!("> [tile] wiring tiles");
 
     builder.add_tile_output(CPUMEM_TILE, 0, CPUMEM_LINK, 0)?;
-    builder.add_tile_input(PROCESSOR_TILE, 0, METRICS_WKSP, CPUMEM_LINK, 0, true, true)?;
-
-    builder.add_tile_output(DISK_TILE, 0, DISK_LINK, 0)?;
-    builder.add_tile_input(PROCESSOR_TILE, 0, METRICS_WKSP, DISK_LINK, 0, true, true)?;
-
-    builder.add_tile_output(NETWORK_TILE, 0, NETWORK_LINK, 0)?;
-    builder.add_tile_input(PROCESSOR_TILE, 0, METRICS_WKSP, NETWORK_LINK, 0, true, true)?;
-
-    builder.add_tile_output(PROCESSOR_TILE, 0, PROCESSOR_LINK, 0)?;
     builder.add_tile_input(
-        WRITER_TILE,
+        PROCESSOR_TILE,
         0,
         PROCESSING_WKSP,
-        PROCESSOR_LINK,
+        CPUMEM_LINK,
         0,
         true,
         true,
     )?;
+
+    builder.add_tile_output(DISK_TILE, 0, DISK_LINK, 0)?;
+    builder.add_tile_input(PROCESSOR_TILE, 0, PROCESSING_WKSP, DISK_LINK, 0, true, true)?;
+
+    builder.add_tile_output(NETWORK_TILE, 0, NETWORK_LINK, 0)?;
+    builder.add_tile_input(
+        PROCESSOR_TILE,
+        0,
+        PROCESSING_WKSP,
+        NETWORK_LINK,
+        0,
+        true,
+        true,
+    )?;
+
+    builder.add_tile_output(PROCESSOR_TILE, 0, PROCESSOR_LINK, 0)?;
+    builder.add_tile_input(WRITER_TILE, 0, OUTPUT_WKSP, PROCESSOR_LINK, 0, true, true)?;
 
     println!("   >> ✓ cpumem -> processor");
     println!("   >> ✓ disk -> processor");
@@ -322,7 +348,7 @@ fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
     Ok(())
 }
 
-fn analyze_topology(topo: &Topo) -> Result<()> {
+fn verify_layout(topo: &Topo) -> Result<()> {
     println!("> [topo] analyzing structure");
 
     println!(
@@ -346,7 +372,7 @@ fn analyze_topology(topo: &Topo) -> Result<()> {
     Ok(())
 }
 
-fn simulate_execution(
+fn exec(
     topo: &mut Topo,
     _tile_registry: &TileRunnerRegistry,
     _sandbox_config: &SandboxConfig,
