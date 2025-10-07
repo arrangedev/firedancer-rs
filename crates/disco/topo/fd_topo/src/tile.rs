@@ -1,7 +1,7 @@
 use crate::{
     types::{
-        ActiveTileRunner, TileAnonymousFn, TileContextFn, TileRunnerFn, _TileInternal,
-        _TileRunnerInternal,
+        ActiveTileRunner, PopulateAllowedFdsFn, PopulateAllowedSeccompFn, TileAnonymousFn,
+        TileContextFn, TileRunnerFn, _TileInternal, _TileRunnerInternal,
     },
     Result,
 };
@@ -190,6 +190,10 @@ pub struct TileRunner {
     pub scratch_footprint: Option<TileRunnerFn<*const _TileInternal, u64>>,
     /// Calculate loose memory footprint
     pub loose_footprint: Option<TileRunnerFn<*const _TileInternal, u64>>,
+    /// Populate allowed file descriptors for sandboxing
+    pub populate_allowed_fds: Option<PopulateAllowedFdsFn>,
+    /// Populate allowed seccomp filters for sandboxing
+    pub populate_allowed_seccomp: Option<PopulateAllowedSeccompFn>,
 }
 
 impl TileRunner {
@@ -202,7 +206,21 @@ impl TileRunner {
             scratch_align: None,
             scratch_footprint: None,
             loose_footprint: None,
+            populate_allowed_fds: None,
+            populate_allowed_seccomp: None,
         }
+    }
+
+    /// Set the function to populate allowed file descriptors for sandboxing
+    pub fn with_allowed_fds(mut self, populate_fds: PopulateAllowedFdsFn) -> Self {
+        self.populate_allowed_fds = Some(populate_fds);
+        self
+    }
+
+    /// Set the function to populate allowed seccomp filters for sandboxing
+    pub fn with_seccomp(mut self, populate_seccomp: PopulateAllowedSeccompFn) -> Self {
+        self.populate_allowed_seccomp = Some(populate_seccomp);
+        self
     }
 
     pub fn with_privileged_init(mut self, init: TileContextFn) -> Self {
@@ -268,8 +286,8 @@ impl TileRunnerRegistry {
                 rlimit_address_space: 0,
                 rlimit_data: 0,
                 for_tpool: 0,
-                populate_allowed_seccomp: None,
-                populate_allowed_fds: None,
+                populate_allowed_seccomp: runner.populate_allowed_seccomp,
+                populate_allowed_fds: runner.populate_allowed_fds,
                 scratch_align: runner.scratch_align,
                 scratch_footprint: runner.scratch_footprint,
                 loose_footprint: runner.loose_footprint,

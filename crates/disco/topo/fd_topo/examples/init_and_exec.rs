@@ -2,8 +2,8 @@ use std::ffi::CStr;
 
 use fd_topo::{
     types::{ActiveObject, ActiveTile, ActiveTopology},
-    CpuTopology, ObjectCallbacks, PageSize, Result, TileRunner, TileRunnerRegistry, Topo,
-    TopoBuilder, TopologyCallbacks,
+    CpuTopology, ObjectCallbacks, PageSize, Result, SandboxConfig, TileRunner, TileRunnerRegistry,
+    Topo, TopoBuilder, TopologyCallbacks,
 };
 
 const PROGNAME: &'static CStr = c"tachyon_fd";
@@ -116,7 +116,7 @@ fn main() -> Result<()> {
 
     let mut topo = if use_anonymous {
         println!("> [build] using anonymous wksps (mem-backed)");
-        check_system_memory_availability();
+        check_meminfo();
 
         let page_size =
             std::env::var("FD_PAGE_SIZE")
@@ -136,17 +136,31 @@ fn main() -> Result<()> {
             };
             println!("   >> using {} pages (via FD_PAGE_SIZE)", page_name);
         } else {
-            println!("   >> using topology default page sizes (set FD_PAGE_SIZE=normal for compatibility)");
+            println!("   >> using default page_sz (set FD_PAGE_SIZE=normal)");
+            println!("   >> run [vendor_path]/util/shmem/fd_shmem_cfg alloc [page_cnt] [page_sz] [numa_node]");
         }
 
-        builder.build_anonymous(callback_ptr, page_size)?
+        builder.build_anonymous(callback_ptr, Some(PageSize::Normal))?
     } else {
         println!("> [build] using wksps (disk-backed)");
         builder.build(callback_ptr, false)?
     };
 
     analyze_topology(&topo)?;
-    simulate_execution(&mut topo, &tile_registry)?;
+
+    // Configure sandboxing - disabled by default for compatibility
+    let sandbox_config = match std::env::var("FD_SANDBOX") {
+        Ok(val) if val == "1" || val.to_lowercase() == "true" => {
+            println!("   >> sandboxing enabled (via FD_SANDBOX)");
+            SandboxConfig::enabled().with_stdio() // Allow stdio for debugging
+        }
+        _ => {
+            println!("   >> sandboxing disabled (set FD_SANDBOX=1 to enable)");
+            SandboxConfig::disabled()
+        }
+    };
+
+    simulate_execution(&mut topo, &tile_registry, &sandbox_config)?;
 
     Ok(())
 }
@@ -328,7 +342,11 @@ fn analyze_topology(topo: &fd_topo::Topo) -> Result<()> {
     Ok(())
 }
 
-fn simulate_execution(topo: &mut Topo, _tile_registry: &TileRunnerRegistry) -> Result<()> {
+fn simulate_execution(
+    topo: &mut Topo,
+    tile_registry: &TileRunnerRegistry,
+    sandbox_config: &SandboxConfig,
+) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
         println!("> [wksp] joining workspaces: {}", topo.workspace_cnt());
@@ -364,7 +382,7 @@ fn simulate_execution(topo: &mut Topo, _tile_registry: &TileRunnerRegistry) -> R
         let uid = unsafe { libc::getuid() };
         let gid = unsafe { libc::getgid() };
 
-        match topo.run_all_tiles(uid, gid, &_tile_registry) {
+        match topo.run_all_tiles(uid, gid, tile_registry, sandbox_config) {
             Ok(()) => println!("   >> ✓ tiles started"),
             Err(e) => eprintln!("   >> ✗ err={e:?}"),
         }
@@ -383,15 +401,39 @@ fn simulate_execution(topo: &mut Topo, _tile_registry: &TileRunnerRegistry) -> R
     Ok(())
 }
 
+unsafe extern "C" fn populate_stdio_fds(
+    _topo: *const ActiveTopology,
+    _tile: *const ActiveTile,
+    out_fds_sz: u64,
+    out_fds: *mut i32,
+) -> u64 {
+    if out_fds_sz >= 3 {
+        *out_fds.offset(0) = 0; // stdin
+        *out_fds.offset(1) = 1; // stdout
+        *out_fds.offset(2) = 2; // stderr
+        3
+    } else {
+        0
+    }
+}
+
 fn create_tile_runners() -> Result<TileRunnerRegistry> {
     let mut registry = TileRunnerRegistry::new();
 
-    registry.add_runner(TileRunner::new(c"net", net_tile_run))?;
-    registry.add_runner(TileRunner::new(c"quic", quic_tile_run))?;
-    registry.add_runner(TileRunner::new(c"verify", verify_tile_run))?;
-    registry.add_runner(TileRunner::new(c"pack", pack_tile_run))?;
-    registry.add_runner(TileRunner::new(c"bank", bank_tile_run))?;
-    registry.add_runner(TileRunner::new(c"metric", metric_tile_run))?;
+    registry
+        .add_runner(TileRunner::new(c"net", net_tile_run).with_allowed_fds(populate_stdio_fds))?;
+    registry
+        .add_runner(TileRunner::new(c"quic", quic_tile_run).with_allowed_fds(populate_stdio_fds))?;
+    registry.add_runner(
+        TileRunner::new(c"verify", verify_tile_run).with_allowed_fds(populate_stdio_fds),
+    )?;
+    registry
+        .add_runner(TileRunner::new(c"pack", pack_tile_run).with_allowed_fds(populate_stdio_fds))?;
+    registry
+        .add_runner(TileRunner::new(c"bank", bank_tile_run).with_allowed_fds(populate_stdio_fds))?;
+    registry.add_runner(
+        TileRunner::new(c"metric", metric_tile_run).with_allowed_fds(populate_stdio_fds),
+    )?;
 
     Ok(registry)
 }
@@ -552,7 +594,7 @@ unsafe extern "C" fn basic_align(_topo: *const ActiveTopology, _obj: *const Acti
     64
 }
 
-fn check_system_memory_availability() {
+fn check_meminfo() {
     #[cfg(target_os = "linux")]
     {
         if let Ok(meminfo) = std::fs::read_to_string("/proc/meminfo") {

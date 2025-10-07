@@ -33,7 +33,7 @@ pub use error::{Result, TopoError};
 pub use link::Link;
 pub use object::Object;
 pub use tile::{Tile, TileRunner, TileRunnerRegistry};
-pub use types::PageSize;
+pub use types::{PageSize, SandboxConfig};
 pub use workspace::Workspace;
 
 use crate::{
@@ -324,6 +324,7 @@ impl Topo {
         uid: u32,
         gid: u32,
         tile_runner: Option<&_TileRunnerInternal>,
+        sandbox_config: &crate::types::SandboxConfig,
     ) -> Result<()> {
         if tile_id >= self.tile_cnt() {
             return Err(TopoError::NotFound);
@@ -338,9 +339,13 @@ impl Topo {
             sys::fd_topo_run_tile(
                 self.inner,
                 tile_ptr,
-                1, // sandbox
-                0, // no controlling terminal
-                0, // no dump
+                if sandbox_config.enabled { 1 } else { 0 }, // sandbox
+                if sandbox_config.keep_controlling_terminal {
+                    1
+                } else {
+                    0
+                }, // controlling terminal
+                if sandbox_config.dumpable { 1 } else { 0 }, // dumpable
                 uid,
                 gid,
                 -1,                    // no special fd
@@ -360,6 +365,7 @@ impl Topo {
         uid: u32,
         gid: u32,
         tile_registry: &TileRunnerRegistry,
+        sandbox_config: &crate::types::SandboxConfig,
     ) -> Result<()> {
         for tile_id in 0..self.tile_cnt() {
             let tile_name = unsafe {
@@ -374,7 +380,7 @@ impl Topo {
                 continue;
             }
 
-            self.run_tile(tile_id, uid, gid, runner)?;
+            self.run_tile(tile_id, uid, gid, runner, sandbox_config)?;
         }
         Ok(())
     }
