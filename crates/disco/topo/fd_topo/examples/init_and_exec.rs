@@ -62,19 +62,19 @@ fn main() -> Result<()> {
         }
         _ => match CpuTopology::new_simple() {
             Ok(topo) => {
-                eprintln!("    >> ✓ cpu-topology found (simple)");
+                eprintln!("    >> ✓ cpu-topology found");
                 topo
             }
             Err(_) => {
                 let topo = CpuTopology::new_custom(6, 1)?;
-                eprintln!("    >> ✓ cpu-topology configured (fallback)");
+                eprintln!("    >> ✓ cpu-topology configured (default)");
                 topo
             }
         },
     };
 
     println!(
-        "[sys] cpus={}, numa-nodes={}",
+        "> [cpu-cfg] cpus={}, numa-nodes={}",
         cpu_topo.cpu_count(),
         cpu_topo.numa_node_count()
     );
@@ -105,13 +105,11 @@ fn main() -> Result<()> {
 
     // auto layout won't work on some machines, and we've already manually laid out topology
     // builder.auto_layout(false)?;
-    println!("> ✓ auto-layout");
 
     let mut callbacks = create_callbacks()?;
     let callback_ptr = callbacks.finalize()?;
 
     let mut topo = builder.build(callback_ptr)?;
-    println!("> ✓ built topology");
 
     analyze_topology(&topo)?;
     simulate_execution(&mut topo)?;
@@ -120,7 +118,7 @@ fn main() -> Result<()> {
 }
 
 fn create_workspaces(builder: &mut TopoBuilder) -> Result<()> {
-    println!("   > creating workspaces");
+    println!("> [wksp] creating workspaces");
 
     builder.add_workspace(c"net")?;
     println!("   >> ✓ net_wksp");
@@ -138,7 +136,7 @@ fn create_workspaces(builder: &mut TopoBuilder) -> Result<()> {
 }
 
 fn create_links(builder: &mut TopoBuilder) -> Result<()> {
-    println!("   > creating links");
+    println!("> [link] creating links");
 
     builder.add_link(c"net_quic", c"net", 1024, 2048, 16)?;
     println!("   >> ✓ link: net_quic (depth: 1024, mtu: 2048)");
@@ -155,14 +153,18 @@ fn create_links(builder: &mut TopoBuilder) -> Result<()> {
     builder.add_link(c"pack_bank", c"bank", 512, 4096, 8)?;
     println!("   >> ✓ link: pack_bank (depth: 512, mtu: 4096)");
 
-    builder.add_link(c"metric", c"metric", 256, 512, 4)?;
+    for i in 0..5 {
+        builder.add_link(c"metric", c"metric", 256, 512, 4)?;
+    }
     println!("   >> ✓ link: metric_collect (depth: 256, mtu: 512)");
+
+    println!("     >>> ✓ links created");
 
     Ok(())
 }
 
 fn create_tiles(builder: &mut TopoBuilder) -> Result<()> {
-    println!("   > creating tiles");
+    println!("> [tile] creating tiles");
 
     builder.add_tile(c"net", c"net", c"metric", Some(0), false, false)?;
     builder.add_object(c"net_rx_buf", c"net")?;
@@ -196,11 +198,13 @@ fn create_tiles(builder: &mut TopoBuilder) -> Result<()> {
     builder.add_object(c"metrd", c"metric")?;
     println!("   >> ✓ metric (cpuid=7)");
 
+    println!("     >>> ✓ tiles created");
+
     Ok(())
 }
 
 fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
-    println!("   > wiring tiles");
+    println!("> [tile] wiring tiles");
 
     builder.add_tile_output(c"net", 0, c"net_quic", 0)?;
     builder.add_tile_input(c"quic", 0, c"net", c"net_quic", 0, true, true)?;
@@ -220,18 +224,20 @@ fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
         builder.add_tile_input(c"bank", i, c"bank", c"pack_bank", 0, true, true)?;
     }
 
-    for tile_name in &METRIC_TILE_LINKS {
-        builder.add_tile_output(tile_name, 0, c"metric", 0)?;
+    for (i, tile_name) in METRIC_TILE_LINKS.iter().enumerate() {
+        builder.add_tile_output(tile_name, 0, c"metric", i)?;
     }
 
-    builder.add_tile_input(c"metric", 0, c"metric", c"metric", 0, false, true)?;
+    for i in 0..5 {
+        builder.add_tile_input(c"metric", 0, c"metric", c"metric", i, false, true)?;
+    }
 
-    println!("   >> ✓ topology wired");
+    println!("     >>> ✓ topology wired");
     Ok(())
 }
 
 fn analyze_topology(topo: &fd_topo::Topo) -> Result<()> {
-    println!("> analyzing structure");
+    println!("> [topo] analyzing structure");
 
     println!(
         "   >> wksps={} links={} tiles={} objs={}",
@@ -266,23 +272,25 @@ fn analyze_topology(topo: &fd_topo::Topo) -> Result<()> {
     let bank_tile_count = topo.tile_name_count("bank");
     println!("   >> parallelism: verify={verify_tile_count} bank={bank_tile_count}",);
 
+    println!("     >>> ✓ topology verified");
+
     Ok(())
 }
 
 fn simulate_execution(topo: &mut fd_topo::Topo) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
-        println!("   > joining workspaces: {}", topo.workspace_count());
+        println!("> [wksp] joining workspaces: {}", topo.workspace_count());
 
         match topo.join_workspaces(false) {
             Ok(()) => println!("   >> ✓ workspaces joined"),
             Err(e) => eprintln!("   >> ✗ err={e:?}"),
         }
 
-        println!("   > filling objects");
+        println!("   >> filling objects");
         topo.fill();
 
-        println!("   > initializing tile contexts");
+        println!("   >> initializing tile contexts");
         for tile_id in 0..topo.tile_count() {
             match topo.join_tile_workspaces(tile_id) {
                 Ok(()) => match topo.fill_tile(tile_id) {
@@ -308,7 +316,7 @@ fn simulate_execution(topo: &mut fd_topo::Topo) -> Result<()> {
     #[cfg(not(target_os = "linux"))]
     {
         println!(
-            "   > workspaces={}, tiles={}, links={}",
+            "   >> workspaces={}, tiles={}, links={}",
             topo.workspace_count(),
             topo.tile_count(),
             topo.link_count()
