@@ -159,13 +159,37 @@ fn generate_header(
 #include "{}/fd_util.h"
 #include "{}/fd_shmem_private.h"
 #include "{}/fd_wksp.h"
+#include "{}/fd_mcache.h"
+#include "{}/fd_dcache.h"
+#include "{}/fd_fseq.h"
+#include "{}/fd_metrics.h"
 "#,
         topo_path.canonicalize().unwrap().display(),
         topo_path.canonicalize().unwrap().display(),
         topo_path.canonicalize().unwrap().display(),
         util_path.canonicalize().unwrap().display(),
         util_path.join("shmem").canonicalize().unwrap().display(),
-        util_path.join("wksp").canonicalize().unwrap().display()
+        util_path.join("wksp").canonicalize().unwrap().display(),
+        util_path
+            .join("../tango/mcache")
+            .canonicalize()
+            .unwrap()
+            .display(),
+        util_path
+            .join("../tango/dcache")
+            .canonicalize()
+            .unwrap()
+            .display(),
+        util_path
+            .join("../tango/fseq")
+            .canonicalize()
+            .unwrap()
+            .display(),
+        util_path
+            .join("../disco/metrics")
+            .canonicalize()
+            .unwrap()
+            .display()
     );
 
     #[cfg(target_os = "linux")]
@@ -212,6 +236,10 @@ fn init_bindgen(
         .allowlist_function("fd_numa_.*")
         .allowlist_function("fd_wksp_.*")
         .allowlist_function("fd_shmem_.*")
+        .allowlist_function("fd_mcache_.*")
+        .allowlist_function("fd_dcache_.*")
+        .allowlist_function("fd_fseq_.*")
+        .allowlist_function("fd_metrics_.*")
         .allowlist_function("fd_boot")
         .allowlist_function("fd_halt")
         .allowlist_type("fd_topo_.*")

@@ -308,6 +308,12 @@ fn simulate_execution(topo: &mut fd_topo::Topo) -> Result<()> {
             Err(e) => eprintln!("   >> ✗ err={e:?}"),
         }
 
+        println!("   >> initializing objects");
+        match topo.init_objects() {
+            Ok(()) => println!("   >> ✓ objects initialized"),
+            Err(e) => eprintln!("   >> ✗ err={e:?}"),
+        }
+
         println!("   >> filling objects");
         topo.fill();
 

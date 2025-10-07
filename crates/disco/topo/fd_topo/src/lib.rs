@@ -50,6 +50,63 @@ pub unsafe fn shutdown() {
 pub type TopoCallbackFn<R> =
     unsafe extern "C" fn(topo: *const sys::fd_topo_t, obj: *const sys::fd_topo_obj_t) -> R;
 
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct ObjectInitConfig {
+    /// Size of application region for mcache objects (in bytes).
+    ///
+    /// The application region is used for application-specific data storage
+    /// within the mcache. Set to 0 if no application region is needed.
+    /// Default: 0
+    pub mcache_app_sz: u64,
+
+    /// Size of application region for dcache objects (in bytes).
+    ///
+    /// The application region is used for application-specific data storage
+    /// within the dcache. Set to 0 if no application region is needed.
+    /// Default: 0
+    pub dcache_app_sz: u64,
+
+    /// Initial sequence number for mcache and fseq objects.
+    ///
+    /// This is the starting sequence number used for fragment ordering
+    /// and flow control. For most applications, 0 is the correct value.
+    /// Default: 0
+    pub initial_seq: u64,
+}
+
+impl Default for ObjectInitConfig {
+    fn default() -> Self {
+        Self {
+            mcache_app_sz: 0,
+            dcache_app_sz: 0,
+            initial_seq: 0,
+        }
+    }
+}
+
+impl ObjectInitConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_mcache_app_sz(mut self, app_sz: u64) -> Self {
+        self.mcache_app_sz = app_sz;
+        self
+    }
+
+    pub fn with_dcache_app_sz(mut self, app_sz: u64) -> Self {
+        self.dcache_app_sz = app_sz;
+        self
+    }
+
+    /// initial sequence number for mcache and fseq objects.
+    pub fn with_initial_seq(mut self, seq: u64) -> Self {
+        self.initial_seq = seq;
+        self
+    }
+}
+
 pub const MAX_WORKSPACES: usize = sys::FD_TOPO_MAX_WKSPS as usize;
 pub const MAX_LINKS: usize = sys::FD_TOPO_MAX_LINKS as usize;
 pub const MAX_TILES: usize = sys::FD_TOPO_MAX_TILES as usize;
@@ -210,6 +267,82 @@ impl Topo {
         unsafe {
             sys::fd_topo_fill(self.inner);
         }
+    }
+
+    /// Initialize all objects in the topo wksps
+    ///
+    /// This must be called after wksps are created but before fill()
+    pub fn init_objects(&mut self) -> Result<()> {
+        self.init_objects_with_config(&ObjectInitConfig::default())
+    }
+
+    /// Initialize all objects in the topo wksps with a custom config
+    ///
+    /// This must be called after wksps are created but before fill()
+    pub fn init_objects_with_config(&mut self, config: &ObjectInitConfig) -> Result<()> {
+        unsafe {
+            let topo = &*self.inner;
+            for i in 0..topo.obj_cnt {
+                let obj = &topo.objs[i as usize];
+                let obj_laddr = sys::fd_topo_obj_laddr(self.inner, obj.id);
+
+                if obj_laddr.is_null() {
+                    continue;
+                }
+
+                let obj_name = core::ffi::CStr::from_ptr(obj.name.as_ptr());
+                let obj_name_str = obj_name.to_str().unwrap_or("");
+
+                match obj_name_str {
+                    "mcache" => {
+                        let mut depth = 1024u64;
+                        for j in 0..topo.link_cnt {
+                            let link = &topo.links[j as usize];
+                            if link.mcache_obj_id == obj.id {
+                                depth = link.depth;
+                                break;
+                            }
+                        }
+                        sys::fd_mcache_new(
+                            obj_laddr,
+                            depth,
+                            config.mcache_app_sz,
+                            config.initial_seq,
+                        );
+                    }
+                    "dcache" => {
+                        let mut def_data_sz = 1024u64 * 1024u64;
+                        for j in 0..topo.link_cnt {
+                            let link = &topo.links[j as usize];
+                            if link.dcache_obj_id == obj.id {
+                                def_data_sz =
+                                    sys::fd_dcache_req_data_sz(link.mtu, link.depth, link.burst, 1);
+                                break;
+                            }
+                        }
+                        sys::fd_dcache_new(obj_laddr, def_data_sz, config.dcache_app_sz);
+                    }
+                    "fseq" => {
+                        sys::fd_fseq_new(obj_laddr, config.initial_seq);
+                    }
+                    "metrics" => {
+                        let mut in_link_cnt = 0u64;
+                        let mut out_link_cnt = 0u64;
+                        for j in 0..topo.tile_cnt {
+                            let tile = &topo.tiles[j as usize];
+                            if tile.metrics_obj_id == obj.id {
+                                in_link_cnt = tile.in_cnt;
+                                out_link_cnt = tile.out_cnt;
+                                break;
+                            }
+                        }
+                        sys::fd_metrics_new(obj_laddr, in_link_cnt, out_link_cnt);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
     }
 
     #[inline]
