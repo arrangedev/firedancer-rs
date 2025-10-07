@@ -7,12 +7,31 @@
 use core::ffi::CStr;
 use fd_topo_sys as sys;
 
-/// Represents a workspace in the topology.
 pub struct Workspace {
     inner: *mut sys::fd_topo_wksp_t,
 }
 
 impl Workspace {
+    /// Create the shared memory region for this workspace.
+    /// This must be called before attempting to join
+    pub fn create(
+        &mut self,
+        topo: *mut sys::fd_topo_t,
+        update_existing: bool,
+    ) -> crate::Result<()> {
+        unsafe {
+            let result = sys::fd_topo_create_workspace(
+                topo,
+                self.inner,
+                if update_existing { 1 } else { 0 },
+            );
+            if result != 0 {
+                return Err(crate::TopoError::SystemError);
+            }
+        }
+        Ok(())
+    }
+
     /// Create a workspace wrapper from a raw pointer.
     ///
     /// # Safety

@@ -7,7 +7,6 @@
 use core::ffi::CStr;
 use fd_topo_sys as sys;
 
-/// Represents a link in the topology.
 pub struct Link {
     inner: *mut sys::fd_topo_link_t,
 }

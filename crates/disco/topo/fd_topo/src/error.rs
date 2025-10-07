@@ -2,6 +2,7 @@ use firedancer_rs_common::define_errors;
 
 define_errors! {
     TopoError,
+    { InvalidInput => "Invalid input" },
     { InvalidName => "Invalid name" },
     { ResourceLimitExceeded => "Resource limit exceeded" },
     { InvalidConfiguration => "Invalid configuration" },

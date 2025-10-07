@@ -61,15 +61,8 @@ fn main() -> Result<()> {
             CpuTopology::new_custom(cpu_count, numa_count)?
         }
         _ => match CpuTopology::new_simple() {
-            Ok(topo) => {
-                eprintln!("    >> ✓ cpu-topology found");
-                topo
-            }
-            Err(_) => {
-                let topo = CpuTopology::new_custom(6, 1)?;
-                eprintln!("    >> ✓ cpu-topology configured (default)");
-                topo
-            }
+            Ok(topo) => topo,
+            Err(_) => CpuTopology::new_custom(6, 1)?,
         },
     };
 
@@ -109,7 +102,7 @@ fn main() -> Result<()> {
     let mut callbacks = create_callbacks()?;
     let callback_ptr = callbacks.finalize()?;
 
-    let mut topo = builder.build(callback_ptr)?;
+    let mut topo = builder.build(callback_ptr, false)?;
 
     analyze_topology(&topo)?;
     simulate_execution(&mut topo)?;
@@ -120,17 +113,19 @@ fn main() -> Result<()> {
 fn create_workspaces(builder: &mut TopoBuilder) -> Result<()> {
     println!("> [wksp] creating workspaces");
 
-    builder.add_workspace(c"net")?;
+    builder.add_wksp(c"net")?;
     println!("   >> ✓ net_wksp");
 
-    builder.add_workspace(c"pack")?;
+    builder.add_wksp(c"pack")?;
     println!("   >> ✓ pack_wksp");
 
-    builder.add_workspace(c"bank")?;
+    builder.add_wksp(c"bank")?;
     println!("   >> ✓ bank_wksp");
 
-    builder.add_workspace(c"metric")?;
+    builder.add_wksp(c"metric")?;
     println!("   >> ✓ metric_wksp");
+
+    println!("     >>> ✓ wksps created");
 
     Ok(())
 }
@@ -209,16 +204,25 @@ fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
     builder.add_tile_output(c"net", 0, c"net_quic", 0)?;
     builder.add_tile_input(c"quic", 0, c"net", c"net_quic", 0, true, true)?;
     builder.add_tile_output(c"quic", 0, c"quic_verify", 0)?;
+    println!("   >> ✓ 'net' -> 'quic' (cpuid=0)");
+    println!("   >> ✓ 'quic' -> 'net' (cpuid=0)");
+    println!("   >> ✓ 'quic' -> 'verify' (cpuid=0)");
 
     for i in 0..2 {
         builder.add_tile_input(c"verify", i, c"pack", c"quic_verify", 0, true, true)?;
         builder.add_tile_output(c"verify", i, c"verify_pack", i)?; // Use different link_kind_id for each verify tile
     }
 
+    println!("   >> ✓ 'quic' -> 'verify' (cpuid=0)");
+    println!("   >> ✓ 'verify' -> 'pack' (cpuid=1)");
+
     for i in 0..2 {
         builder.add_tile_input(c"pack", 0, c"pack", c"verify_pack", i, true, true)?;
     }
     builder.add_tile_output(c"pack", 0, c"pack_bank", 0)?;
+
+    println!("   >> ✓ 'verify' -> 'pack' (cpuid=1)");
+    println!("   >> ✓ 'pack' -> 'bank' (cpuid=1)");
 
     for i in 0..2 {
         builder.add_tile_input(c"bank", i, c"bank", c"pack_bank", 0, true, true)?;
@@ -231,6 +235,12 @@ fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
     for i in 0..5 {
         builder.add_tile_input(c"metric", 0, c"metric", c"metric", i, false, true)?;
     }
+
+    println!("   >> ✓ 'pack' -> 'metric' (cpuid=1)");
+    println!("   >> ✓ 'bank' -> 'metric' (cpuid=1)");
+    println!("   >> ✓ 'quic' -> 'metric' (cpuid=1)");
+    println!("   >> ✓ 'verify' -> 'metric' (cpuid=1)");
+    println!("   >> ✓ 'net' -> 'metric' (cpuid=1)");
 
     println!("     >>> ✓ topology wired");
     Ok(())

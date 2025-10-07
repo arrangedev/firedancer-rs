@@ -1,5 +1,5 @@
-use crate::TopoCallbackFn;
 use crate::{Result, Topo, TopoError};
+use crate::{TopoCallbackFn, Workspace};
 use core::ffi::CStr;
 use core::mem;
 use core::ptr;
@@ -120,6 +120,7 @@ pub struct TopoBuilder {
 }
 
 impl TopoBuilder {
+    #[inline]
     pub fn new(app_name: &'static CStr) -> Result<Self> {
         let topo_size = mem::size_of::<sys::fd_topo_t>();
         let align = mem::align_of::<sys::fd_topo_t>();
@@ -141,7 +142,8 @@ impl TopoBuilder {
         }
     }
 
-    pub fn add_workspace(&mut self, name: &'static CStr) -> Result<()> {
+    #[inline]
+    pub fn add_wksp(&mut self, name: &'static CStr) -> Result<()> {
         unsafe {
             let wksp_ptr = sys::fd_topob_wksp(self.inner, name.as_ptr());
             if wksp_ptr.is_null() {
@@ -152,6 +154,7 @@ impl TopoBuilder {
         Ok(())
     }
 
+    #[inline]
     pub fn add_object(&mut self, obj_name: &'static CStr, wksp_name: &'static CStr) -> Result<()> {
         unsafe {
             let obj_ptr = sys::fd_topob_obj(self.inner, obj_name.as_ptr(), wksp_name.as_ptr());
@@ -163,6 +166,7 @@ impl TopoBuilder {
         Ok(())
     }
 
+    #[inline]
     pub fn add_link(
         &mut self,
         link_name: &'static CStr,
@@ -188,6 +192,7 @@ impl TopoBuilder {
         Ok(())
     }
 
+    #[inline]
     pub fn add_tile(
         &mut self,
         tile_name: &'static CStr,
@@ -218,6 +223,7 @@ impl TopoBuilder {
     }
 
     /// Add an input link to a tile
+    #[inline]
     pub fn add_tile_input(
         &mut self,
         tile_name: &'static CStr,
@@ -245,6 +251,7 @@ impl TopoBuilder {
     }
 
     /// Add an output link to a tile
+    #[inline]
     pub fn add_tile_output(
         &mut self,
         tile_name: &'static CStr,
@@ -266,6 +273,7 @@ impl TopoBuilder {
     }
 
     /// Automatically layout tiles onto CPUs
+    #[inline]
     pub fn auto_layout(&mut self, reserve_agave_cores: bool) -> Result<()> {
         unsafe {
             sys::fd_topob_auto_layout(self.inner, if reserve_agave_cores { 1 } else { 0 });
@@ -273,7 +281,46 @@ impl TopoBuilder {
         Ok(())
     }
 
-    pub fn build(self, callbacks: *mut *mut sys::fd_topo_obj_callbacks_t) -> Result<Topo> {
+    /// Create the shared memory region for a specific workspace by name.
+    /// Must be called after `add_wksp`, but before attempting to join
+    #[allow(dead_code)]
+    fn create_wksp(&mut self, name: &str, update_existing: bool) -> Result<()> {
+        unsafe {
+            let topo = &*self.inner;
+            for i in 0..topo.wksp_cnt {
+                let wksp_ptr = &mut (*self.inner).workspaces[i as usize];
+                let wksp_name = CStr::from_ptr(wksp_ptr.name.as_ptr())
+                    .to_str()
+                    .map_err(|_| TopoError::InvalidInput)?;
+
+                if wksp_name == name {
+                    let mut workspace = Workspace::from_raw(wksp_ptr);
+                    return workspace.create(self.inner, update_existing);
+                }
+            }
+            Err(TopoError::NotFound)
+        }
+    }
+
+    #[inline]
+    fn create_all_wksps(&mut self, update_existing: bool) -> Result<()> {
+        unsafe {
+            for i in 0..(*self.inner).wksp_cnt {
+                let wksp_ptr = &mut (*self.inner).workspaces[i as usize];
+                let mut workspace = Workspace::from_raw(wksp_ptr);
+                workspace.create(self.inner, update_existing)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn build(
+        mut self,
+        callbacks: *mut *mut sys::fd_topo_obj_callbacks_t,
+        update_existing: bool,
+    ) -> Result<Topo> {
+        self.create_all_wksps(update_existing)?;
+
         unsafe {
             sys::fd_topob_finish(self.inner, callbacks);
             let topo = Topo::from_raw(self.inner, true);

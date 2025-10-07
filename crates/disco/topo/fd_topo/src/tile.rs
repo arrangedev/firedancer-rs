@@ -7,7 +7,6 @@
 use core::ffi::CStr;
 use fd_topo_sys as sys;
 
-/// Represents a tile in the topology.
 pub struct Tile {
     inner: *mut sys::fd_topo_tile_t,
 }
