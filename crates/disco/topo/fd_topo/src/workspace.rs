@@ -1,7 +1,7 @@
 use core::ffi::CStr;
 use fd_topo_sys as sys;
 
-use crate::types::{ActiveTopology, ActiveWorkspace, _WorkspaceInternal};
+use crate::types::{_TopoInternal, _WorkspaceInternal};
 
 /// A memory management component that is comprised of multiple orchestrated
 /// tiles, objects for them to access, and sits on top of one or more
@@ -12,11 +12,7 @@ pub struct Workspace {
 }
 
 impl Workspace {
-    pub fn create(
-        &mut self,
-        topo: *mut ActiveTopology,
-        update_existing: bool,
-    ) -> crate::Result<()> {
+    pub fn create(&mut self, topo: *mut _TopoInternal, update_existing: bool) -> crate::Result<()> {
         unsafe {
             let result = sys::fd_topo_create_workspace(
                 topo,
@@ -34,7 +30,7 @@ impl Workspace {
     ///
     /// Anonymous workspaces don't require shared memory setup.
     /// They exist only in memory and are automatically cleaned up when the process exits.
-    pub fn create_anonymous(&mut self, topo: *mut ActiveTopology) -> crate::Result<()> {
+    pub fn create_anonymous(&mut self, topo: *mut _TopoInternal) -> crate::Result<()> {
         unsafe {
             let page_cnt = (*self.inner).__bindgen_anon_1.page_cnt;
             let page_sz = (*self.inner).__bindgen_anon_1.page_sz;
@@ -77,17 +73,17 @@ impl Workspace {
     ///
     /// SAFETY: caller must ensure that `ptr` is a valid pointer to an initialized
     /// `fd_topo_wksp_t` that remains valid for the lifetime of this `Workspace`.
-    pub unsafe fn from_raw(ptr: *mut ActiveWorkspace) -> Self {
+    pub unsafe fn from_raw(ptr: *mut _WorkspaceInternal) -> Self {
         Self { inner: ptr }
     }
 
     #[inline]
-    pub fn as_ptr(&self) -> *const ActiveWorkspace {
+    pub fn as_ptr(&self) -> *const _WorkspaceInternal {
         self.inner
     }
 
     #[inline]
-    pub fn as_mut_ptr(&mut self) -> *mut ActiveWorkspace {
+    pub fn as_mut_ptr(&mut self) -> *mut _WorkspaceInternal {
         self.inner
     }
 

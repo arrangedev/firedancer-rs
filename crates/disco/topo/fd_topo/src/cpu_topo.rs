@@ -3,12 +3,13 @@ use core::ffi::CStr;
 use crate::{types::_CpusInternal, Result};
 use fd_topo_sys as sys;
 
+#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Cpu {
     pub idx: usize,
     pub online: bool,
     pub numa_node: usize,
-    /// sibling for hyperthreading
+    /// for hyperthreading
     pub sibling: usize,
 }
 
@@ -18,7 +19,6 @@ pub struct CpuTopology {
 }
 
 impl CpuTopology {
-    /// initialize cpu topology with the desired config
     #[inline]
     pub fn new_custom(
         progname: &'static CStr,
@@ -41,9 +41,8 @@ impl CpuTopology {
         Ok(Self { inner: cpus })
     }
 
-    /// initialize cpu topology with the default settings.
-    ///
-    /// uses `get_nprocs()` internally, which avoids parsing sysfs
+    /// Initialize cpu topology with the default settings.
+    /// This uses `get_nprocs()` internally, which avoids parsing sysfs
     /// and might work better on older systems
     #[inline]
     pub fn new_simple(progname: &'static CStr) -> Result<Self> {

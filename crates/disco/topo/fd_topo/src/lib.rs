@@ -2,13 +2,16 @@
 //!
 //! `topo` manages the structure workspaces, tiles, and links between them.
 //!
-//! # Concepts
+//! - Topology: Overarching structure describing workspaces, tiles, and links
 //!
-//! - Topology (`Topo`): The overall structure describing workspaces, tiles, and links
-//! - Workspace (`Workspace`): Memory management structures backed by huge pages
-//! - Tile (`Tile`): Individual processes/threads of execution
-//! - Link (`Link`): Communication channels between tiles with mcache/dcache
-//! - Object (`Object`): Memory objects within workspaces
+//! - Workspace: Group of one or more tiles with corresponding links and objects,
+//! handling memory management and backed by huge pages
+//!
+//! - Tile: Individual processes/threads of execution
+//!
+//! - Link: Input/Output message channels between tiles using mcaches/dcaches respectively
+//!
+//! - Object: Blobs/data structures stored within workspace memory
 
 use core::ffi::CStr;
 use fd_topo_sys as sys;
@@ -24,7 +27,7 @@ pub mod tile;
 pub mod types;
 pub mod workspace;
 
-pub use builder::{CallbackRegistry, ObjectCallbacks, TopoBuilder};
+pub use builder::{ObjectCallbacks, TopoBuilder, TopologyCallbacks};
 pub use cpu_topo::CpuTopology;
 pub use error::{Result, TopoError};
 pub use link::Link;
@@ -32,12 +35,25 @@ pub use object::Object;
 pub use tile::{Tile, TileRunner, TileRunnerRegistry};
 pub use workspace::Workspace;
 
-use crate::types::{
-    ActiveTile, ActiveTopology, TopoCallbackFn, _TileInternal, _TileRunnerInternal, _TopoInternal,
+use crate::{
+    object::ObjectInitConfig,
+    types::{
+        ActiveTile, ActiveTopology, TopoCallbackFn, _TileInternal, _TileRunnerInternal,
+        _TopoInternal,
+    },
 };
+
+pub const MAX_WORKSPACES: usize = sys::FD_TOPO_MAX_WKSPS as usize;
+pub const MAX_LINKS: usize = sys::FD_TOPO_MAX_LINKS as usize;
+pub const MAX_TILES: usize = sys::FD_TOPO_MAX_TILES as usize;
+pub const MAX_OBJECTS: usize = sys::FD_TOPO_MAX_OBJS as usize;
+pub const MAX_TILE_IN_LINKS: usize = sys::FD_TOPO_MAX_TILE_IN_LINKS as usize;
+pub const MAX_TILE_OUT_LINKS: usize = sys::FD_TOPO_MAX_TILE_OUT_LINKS as usize;
+pub const MAX_TILE_OBJECTS: usize = sys::FD_TOPO_MAX_TILE_OBJS as usize;
 
 static INIT: Once = Once::new();
 
+#[inline]
 pub unsafe fn init(program_name: &'static CStr) {
     INIT.call_once(|| {
         let program_name = program_name.as_ptr() as *mut i8;
@@ -48,75 +64,12 @@ pub unsafe fn init(program_name: &'static CStr) {
     });
 }
 
+#[inline]
 pub unsafe fn shutdown() {
     sys::fd_halt();
 }
 
 #[repr(C)]
-#[derive(Debug, Clone)]
-pub struct ObjectInitConfig {
-    /// Size of application region for mcache objects (in bytes).
-    ///
-    /// The application region is used for application-specific data storage
-    /// within the mcache. Set to 0 if no application region is needed.
-    /// Default: 0
-    pub mcache_app_sz: u64,
-
-    /// Size of application region for dcache objects (in bytes).
-    ///
-    /// The application region is used for application-specific data storage
-    /// within the dcache. Set to 0 if no application region is needed.
-    /// Default: 0
-    pub dcache_app_sz: u64,
-
-    /// Initial sequence number for mcache and fseq objects.
-    ///
-    /// This is the starting sequence number used for fragment ordering
-    /// and flow control. For most applications, 0 is the correct value.
-    /// Default: 0
-    pub initial_seq: u64,
-}
-
-impl Default for ObjectInitConfig {
-    fn default() -> Self {
-        Self {
-            mcache_app_sz: 0,
-            dcache_app_sz: 0,
-            initial_seq: 0,
-        }
-    }
-}
-
-impl ObjectInitConfig {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_mcache_app_sz(mut self, app_sz: u64) -> Self {
-        self.mcache_app_sz = app_sz;
-        self
-    }
-
-    pub fn with_dcache_app_sz(mut self, app_sz: u64) -> Self {
-        self.dcache_app_sz = app_sz;
-        self
-    }
-
-    /// initial sequence number for mcache and fseq objects.
-    pub fn with_initial_seq(mut self, seq: u64) -> Self {
-        self.initial_seq = seq;
-        self
-    }
-}
-
-pub const MAX_WORKSPACES: usize = sys::FD_TOPO_MAX_WKSPS as usize;
-pub const MAX_LINKS: usize = sys::FD_TOPO_MAX_LINKS as usize;
-pub const MAX_TILES: usize = sys::FD_TOPO_MAX_TILES as usize;
-pub const MAX_OBJECTS: usize = sys::FD_TOPO_MAX_OBJS as usize;
-pub const MAX_TILE_IN_LINKS: usize = sys::FD_TOPO_MAX_TILE_IN_LINKS as usize;
-pub const MAX_TILE_OUT_LINKS: usize = sys::FD_TOPO_MAX_TILE_OUT_LINKS as usize;
-pub const MAX_TILE_OBJECTS: usize = sys::FD_TOPO_MAX_TILE_OBJS as usize;
-
 pub struct Topo {
     inner: *mut _TopoInternal,
     owned: bool,
@@ -124,19 +77,22 @@ pub struct Topo {
 
 impl Topo {
     /// SAFETY: caller must ensure that:
-    /// - `ptr` is a valid pointer to an initialized `fd_topo_t`
-    /// - Memory pointed to by `ptr` remains valid for the lifetime of this `Topo`
-    /// - If `owned` is true, this `Topo` will take ownership and free the memory on drop
+    /// - ptr is a valid pointer to an initialized `fd_topo_t`
+    /// - Memory pointed to by `ptr` remains valid for the lifetime of this instance
+    /// - If `owned` is true, this instance will take ownership and free the memory on drop
+    #[inline]
     pub unsafe fn from_raw(ptr: *mut _TopoInternal, owned: bool) -> Self {
         Self { inner: ptr, owned }
     }
 
-    /// SAFETY: returned pointer is valid only as long as this `Topo` exists.
+    /// SAFETY: returned pointer is valid only as long as this instance exists.
+    #[inline]
     pub fn as_ptr(&self) -> *const _TopoInternal {
         self.inner
     }
 
-    /// SAFETY: returned pointer is valid only as long as this `Topo` exists.
+    /// SAFETY: returned pointer is valid only as long as this instance exists.
+    #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut _TopoInternal {
         self.inner
     }
@@ -271,16 +227,14 @@ impl Topo {
         }
     }
 
-    /// Initialize all objects in the topo wksps
-    ///
-    /// This must be called after wksps are created but before fill()
+    /// Initialize all objects in the topo wksps.
+    /// Must be called after wksps are created but before fill()
     pub fn init_objects(&mut self) -> Result<()> {
         self.init_objects_with_config(&ObjectInitConfig::default())
     }
 
-    /// Initialize all objects in the topo wksps with a custom config
-    ///
-    /// This must be called after wksps are created but before fill()
+    /// Initialize all objects in the topo wksps with a custom config.
+    /// Must be called after wksps are created but before fill()
     pub fn init_objects_with_config(&mut self, config: &ObjectInitConfig) -> Result<()> {
         unsafe {
             let topo = &*self.inner;
@@ -383,9 +337,9 @@ impl Topo {
             sys::fd_topo_run_tile(
                 self.inner,
                 tile_ptr,
-                1, // sandbox enabled
-                0, // don't keep controlling terminal
-                0, // not dumpable
+                1, // sandbox
+                0, // no controlling terminal
+                0, // no dump
                 uid,
                 gid,
                 -1,                    // no special fd

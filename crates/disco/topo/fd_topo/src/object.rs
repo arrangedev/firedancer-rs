@@ -60,3 +60,60 @@ impl Object {
 
 unsafe impl Send for Object {}
 unsafe impl Sync for Object {}
+
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct ObjectInitConfig {
+    /// Size of application region for mcache objects (in bytes).
+    ///
+    /// The application region is used for application-specific data storage
+    /// within the mcache. Set to 0 if no application region is needed.
+    /// Default: 0
+    pub mcache_app_sz: u64,
+
+    /// Size of application region for dcache objects (in bytes).
+    ///
+    /// The application region is used for application-specific data storage
+    /// within the dcache. Set to 0 if no application region is needed.
+    /// Default: 0
+    pub dcache_app_sz: u64,
+
+    /// Initial sequence number for mcache and fseq objects.
+    ///
+    /// This is the starting sequence number used for fragment ordering
+    /// and flow control. For most applications, 0 is the correct value.
+    /// Default: 0
+    pub initial_seq: u64,
+}
+
+impl Default for ObjectInitConfig {
+    fn default() -> Self {
+        Self {
+            mcache_app_sz: 0,
+            dcache_app_sz: 0,
+            initial_seq: 0,
+        }
+    }
+}
+
+impl ObjectInitConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_mcache_app_sz(mut self, app_sz: u64) -> Self {
+        self.mcache_app_sz = app_sz;
+        self
+    }
+
+    pub fn with_dcache_app_sz(mut self, app_sz: u64) -> Self {
+        self.dcache_app_sz = app_sz;
+        self
+    }
+
+    /// initial sequence number for mcache and fseq objects.
+    pub fn with_initial_seq(mut self, seq: u64) -> Self {
+        self.initial_seq = seq;
+        self
+    }
+}

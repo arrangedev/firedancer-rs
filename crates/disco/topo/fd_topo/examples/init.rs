@@ -2,7 +2,7 @@ use std::ffi::CStr;
 
 use fd_topo::{
     types::{ActiveObject, ActiveTopology},
-    CallbackRegistry, CpuTopology, ObjectCallbacks, Result, TopoBuilder,
+    CpuTopology, ObjectCallbacks, Result, TopoBuilder, TopologyCallbacks,
 };
 
 const PROGNAME: &'static CStr = c"tachyon_fd";
@@ -347,8 +347,8 @@ fn commit_topology(topo: &mut fd_topo::Topo) -> Result<()> {
     Ok(())
 }
 
-fn init_callbacks() -> Result<CallbackRegistry> {
-    let mut registry = CallbackRegistry::new();
+fn init_callbacks() -> Result<TopologyCallbacks> {
+    let mut registry = TopologyCallbacks::new();
 
     for obj_name in ALL_OBJECTS.iter().chain(AUTO_OBJECTS.iter()) {
         registry.add_callback(ObjectCallbacks::new(*obj_name, fp, align))?;

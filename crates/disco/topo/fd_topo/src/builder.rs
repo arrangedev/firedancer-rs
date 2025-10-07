@@ -7,114 +7,6 @@ use core::ptr;
 use fd_topo_sys as sys;
 use std::mem::ManuallyDrop;
 
-/// Callback functions for topology objects
-pub struct ObjectCallbacks {
-    /// Object name (must match the name used when creating the object)
-    pub name: &'static CStr,
-    /// Calculate the memory footprint required for this object
-    pub footprint: TopoCallbackFn<u64>,
-    /// Calculate the memory alignment required for this object
-    pub align: TopoCallbackFn<u64>,
-    /// Calculate loose memory requirements (optional, can be None)
-    pub loose: Option<TopoCallbackFn<u64>>,
-    /// Initialize the object after memory allocation (optional, can be None)
-    pub new: Option<TopoCallbackFn<()>>,
-}
-
-impl ObjectCallbacks {
-    pub fn new(
-        name: &'static CStr,
-        footprint: TopoCallbackFn<u64>,
-        align: TopoCallbackFn<u64>,
-    ) -> Self {
-        Self {
-            name,
-            footprint,
-            align,
-            loose: None,
-            new: None,
-        }
-    }
-
-    /// loose memory callback
-    pub fn with_loose(mut self, loose: TopoCallbackFn<u64>) -> Self {
-        self.loose = Some(loose);
-        self
-    }
-
-    pub fn with_new(mut self, new: TopoCallbackFn<()>) -> Self {
-        self.new = Some(new);
-        self
-    }
-}
-
-/// A collection of object callbacks that can be passed to the topology builder
-pub struct CallbackRegistry {
-    callbacks: Vec<ObjectCallbacks>,
-    // Keep the C-compatible structures alive
-    c_callbacks: Vec<_TopoCallbacksInternal>,
-    c_names: Vec<*const i8>,
-    c_callback_ptrs: Vec<*mut _TopoCallbacksInternal>,
-}
-
-impl CallbackRegistry {
-    /// Create a new empty callback registry
-    pub fn new() -> Self {
-        Self {
-            callbacks: Vec::new(),
-            c_callbacks: Vec::new(),
-            c_names: Vec::new(),
-            c_callback_ptrs: Vec::new(),
-        }
-    }
-
-    /// Add an object callback to the registry
-    pub fn add_callback(&mut self, callback: ObjectCallbacks) -> Result<()> {
-        self.callbacks.push(callback);
-        Ok(())
-    }
-
-    /// Finalize the registry and return a pointer suitable for fd_topob_finish
-    ///
-    /// This must be called after all callbacks are added and before calling build()
-    pub fn finalize(&mut self) -> Result<*mut *mut ActiveTopoCallbacks> {
-        self.c_callbacks.clear();
-        self.c_names.clear();
-        self.c_callback_ptrs.clear();
-
-        for callback in &self.callbacks {
-            let c_name = callback.name;
-
-            let c_callback = _TopoCallbacksInternal {
-                name: c_name.as_ptr() as *const i8,
-                footprint: Some(callback.footprint),
-                align: Some(callback.align),
-                loose: callback.loose,
-                new: callback.new,
-            };
-
-            self.c_names.push(c_name.as_ptr() as *const i8);
-            self.c_callbacks.push(c_callback);
-        }
-
-        // Create pointers to the C callbacks
-        for c_callback in &mut self.c_callbacks {
-            self.c_callback_ptrs.push(c_callback as *mut _);
-        }
-
-        // Add null terminator
-        self.c_callback_ptrs.push(ptr::null_mut());
-
-        Ok(self.c_callback_ptrs.as_mut_ptr())
-    }
-}
-
-impl Default for CallbackRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[repr(C)]
 pub struct TopoBuilder {
     inner: *mut _TopoInternal,
@@ -334,5 +226,109 @@ impl TopoBuilder {
 impl Drop for TopoBuilder {
     fn drop(&mut self) {
         // we don't want to free the memory
+    }
+}
+
+#[repr(C)]
+pub struct ObjectCallbacks {
+    /// Object name (must match the name used when creating the object)
+    pub name: &'static CStr,
+    /// Calculate the memory footprint required for this object
+    pub footprint: TopoCallbackFn<u64>,
+    /// Calculate the memory alignment required for this object
+    pub align: TopoCallbackFn<u64>,
+    /// Calculate loose memory requirements (optional, can be None)
+    pub loose: Option<TopoCallbackFn<u64>>,
+    /// Initialize the object after memory allocation (optional, can be None)
+    pub new: Option<TopoCallbackFn<()>>,
+}
+
+impl ObjectCallbacks {
+    pub fn new(
+        name: &'static CStr,
+        footprint: TopoCallbackFn<u64>,
+        align: TopoCallbackFn<u64>,
+    ) -> Self {
+        Self {
+            name,
+            footprint,
+            align,
+            loose: None,
+            new: None,
+        }
+    }
+
+    /// loose memory callback
+    pub fn with_loose(mut self, loose: TopoCallbackFn<u64>) -> Self {
+        self.loose = Some(loose);
+        self
+    }
+
+    pub fn with_new(mut self, new: TopoCallbackFn<()>) -> Self {
+        self.new = Some(new);
+        self
+    }
+}
+
+#[repr(C)]
+pub struct TopologyCallbacks {
+    callbacks: Vec<ObjectCallbacks>,
+    c_callbacks: Vec<_TopoCallbacksInternal>,
+    c_names: Vec<*const i8>,
+    c_callback_ptrs: Vec<*mut _TopoCallbacksInternal>,
+}
+
+impl TopologyCallbacks {
+    pub fn new() -> Self {
+        Self {
+            callbacks: Vec::new(),
+            c_callbacks: Vec::new(),
+            c_names: Vec::new(),
+            c_callback_ptrs: Vec::new(),
+        }
+    }
+
+    /// Add an object callback to the registry
+    pub fn add_callback(&mut self, callback: ObjectCallbacks) -> Result<()> {
+        self.callbacks.push(callback);
+        Ok(())
+    }
+
+    /// Finalize the registry and return a pointer suitable for `fd_topob_finish`.
+    /// Must be called after all callbacks are added and before calling build()
+    pub fn finalize(&mut self) -> Result<*mut *mut ActiveTopoCallbacks> {
+        self.c_callbacks.clear();
+        self.c_names.clear();
+        self.c_callback_ptrs.clear();
+
+        for callback in &self.callbacks {
+            let c_name = callback.name;
+
+            let c_callback = _TopoCallbacksInternal {
+                name: c_name.as_ptr() as *const i8,
+                footprint: Some(callback.footprint),
+                align: Some(callback.align),
+                loose: callback.loose,
+                new: callback.new,
+            };
+
+            self.c_names.push(c_name.as_ptr() as *const i8);
+            self.c_callbacks.push(c_callback);
+        }
+
+        for c_callback in &mut self.c_callbacks {
+            self.c_callback_ptrs.push(c_callback as *mut _);
+        }
+
+        // null terminator
+        self.c_callback_ptrs.push(ptr::null_mut());
+
+        Ok(self.c_callback_ptrs.as_mut_ptr())
+    }
+}
+
+impl Default for TopologyCallbacks {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -174,7 +174,7 @@ impl Tile {
 unsafe impl Send for Tile {}
 unsafe impl Sync for Tile {}
 
-/// Tile runner functions that define the behavior of a tile type
+#[repr(C)]
 pub struct TileRunner {
     /// Name of the tile type this runner handles
     pub name: &'static CStr,
@@ -237,7 +237,7 @@ impl TileRunner {
     }
 }
 
-/// A registry of tile runners that can be used to execute tiles
+#[repr(C)]
 pub struct TileRunnerRegistry {
     runners: Vec<TileRunner>,
     c_runners: Vec<_TileRunnerInternal>,

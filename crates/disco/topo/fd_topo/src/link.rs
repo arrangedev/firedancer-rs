@@ -1,43 +1,37 @@
-//! Link management for Firedancer topology.
-//!
-//! A link is an mcache in a workspace that has one producer and one or
-//! more consumers. A link may optionally also have a dcache, that holds
-//! fragments referred to by the mcache entries.
-
+use crate::types::_LinkInternal;
 use core::ffi::CStr;
-use fd_topo_sys as sys;
 
+/// Links represent an SPSC/SPMC mcache in a workspace. A link may optionally also have a dcache,
+/// that holds fragments referred to by the mcache entries.
+#[repr(C)]
 pub struct Link {
-    inner: *mut sys::fd_topo_link_t,
+    inner: *mut _LinkInternal,
 }
 
 impl Link {
-    /// Create a link wrapper from a raw pointer.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that `ptr` is a valid pointer to an initialized
+    /// SAFETY: caller must ensure that `ptr` is a valid pointer to an initialized
     /// `fd_topo_link_t` that remains valid for the lifetime of this `Link`.
-    pub unsafe fn from_raw(ptr: *mut sys::fd_topo_link_t) -> Self {
+    #[inline]
+    pub unsafe fn from_raw(ptr: *mut _LinkInternal) -> Self {
         Self { inner: ptr }
     }
 
-    /// Get the raw pointer to the underlying link.
-    pub fn as_ptr(&self) -> *const sys::fd_topo_link_t {
+    #[inline]
+    pub fn as_ptr(&self) -> *const _LinkInternal {
         self.inner
     }
 
-    /// Get a mutable raw pointer to the underlying link.
-    pub fn as_mut_ptr(&mut self) -> *mut sys::fd_topo_link_t {
+    #[inline]
+    pub fn as_mut_ptr(&mut self) -> *mut _LinkInternal {
         self.inner
     }
 
-    /// Get the link ID.
+    #[inline]
     pub fn id(&self) -> usize {
         unsafe { (*self.inner).id as usize }
     }
 
-    /// Get the link name.
+    #[inline]
     pub fn name(&self) -> &str {
         unsafe {
             CStr::from_ptr((*self.inner).name.as_ptr())
@@ -46,58 +40,65 @@ impl Link {
         }
     }
 
-    /// Get the link kind ID.
+    #[inline]
     pub fn kind_id(&self) -> usize {
         unsafe { (*self.inner).kind_id as usize }
     }
 
-    /// Get the depth of the mcache representing the link.
+    /// depth of the mcache representing this link
+    #[inline]
     pub fn depth(&self) -> usize {
         unsafe { (*self.inner).depth as usize }
     }
 
-    /// Get the MTU of data fragments in the mcache.
-    /// Returns 0 if there is no dcache.
+    /// MTU of data fragments in the mcache (0 if no dcache)
+    #[inline]
     pub fn mtu(&self) -> usize {
         unsafe { (*self.inner).mtu as usize }
     }
 
-    /// Get the maximum burst size.
+    /// maximum burst size
+    #[inline]
     pub fn burst(&self) -> usize {
         unsafe { (*self.inner).burst as usize }
     }
 
-    /// Get the mcache object ID.
-    pub fn mcache_object_id(&self) -> usize {
+    #[inline]
+    pub fn mcache_obj_id(&self) -> usize {
         unsafe { (*self.inner).mcache_obj_id as usize }
     }
 
-    /// Get the dcache object ID.
+    #[inline]
     pub fn dcache_object_id(&self) -> usize {
         unsafe { (*self.inner).dcache_obj_id as usize }
     }
 
-    /// Check if this link has a dcache.
+    /// does this link have a dcache?
+    #[inline]
     pub fn has_dcache(&self) -> bool {
         self.mtu() > 0
     }
 
-    /// Check if the link permits having no consumers.
+    /// does the link permit having no consumers?
+    #[inline]
     pub fn permit_no_consumers(&self) -> bool {
         unsafe { (*self.inner).permit_no_consumers() != 0 }
     }
 
-    /// Check if the link permits having no producers.
+    /// does the link permit having no producers?
+    #[inline]
     pub fn permit_no_producers(&self) -> bool {
         unsafe { (*self.inner).permit_no_producers() != 0 }
     }
 
-    /// Check if the mcache is currently mapped.
+    /// is the mcache currently mapped?
+    #[inline]
     pub fn is_mcache_mapped(&self) -> bool {
         unsafe { !(*self.inner).__bindgen_anon_1.mcache.is_null() }
     }
 
-    /// Check if the dcache is currently mapped.
+    /// is the dcache currently mapped?
+    #[inline]
     pub fn is_dcache_mapped(&self) -> bool {
         unsafe { !(*self.inner).__bindgen_anon_1.dcache.is_null() }
     }

@@ -2,8 +2,8 @@ use std::ffi::CStr;
 
 use fd_topo::{
     types::{ActiveObject, ActiveTile, ActiveTopology},
-    CallbackRegistry, CpuTopology, ObjectCallbacks, Result, TileRunner, TileRunnerRegistry,
-    TopoBuilder,
+    CpuTopology, ObjectCallbacks, Result, TileRunner, TileRunnerRegistry, Topo, TopoBuilder,
+    TopologyCallbacks,
 };
 
 const PROGNAME: &'static CStr = c"tachyon_fd";
@@ -305,7 +305,7 @@ fn analyze_topology(topo: &fd_topo::Topo) -> Result<()> {
     Ok(())
 }
 
-fn simulate_execution(topo: &mut fd_topo::Topo, _tile_registry: &TileRunnerRegistry) -> Result<()> {
+fn simulate_execution(topo: &mut Topo, _tile_registry: &TileRunnerRegistry) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
         println!("> [wksp] joining workspaces: {}", topo.workspace_cnt());
@@ -415,7 +415,7 @@ unsafe extern "C" fn quic_tile_run(_topo: *mut ActiveTopology, tile: *mut Active
     );
 }
 
-unsafe extern "C" fn verify_tile_run(topo: *mut ActiveTopology, tile: *mut ActiveTile) {
+unsafe extern "C" fn verify_tile_run(_topo: *mut ActiveTopology, tile: *mut ActiveTile) {
     println!(
         "> [verify] {} (kind {}) starting",
         (*tile).id,
@@ -504,8 +504,8 @@ unsafe extern "C" fn metric_tile_run(_topo: *mut ActiveTopology, tile: *mut Acti
     );
 }
 
-fn create_callbacks() -> Result<CallbackRegistry> {
-    let mut registry = CallbackRegistry::new();
+fn create_callbacks() -> Result<TopologyCallbacks> {
+    let mut registry = TopologyCallbacks::new();
 
     for obj_name in ALL_OBJECTS.iter().chain(AUTO_OBJECTS.iter()) {
         registry.add_callback(ObjectCallbacks::new(
