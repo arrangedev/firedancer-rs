@@ -164,14 +164,31 @@ fn main() -> Result<()> {
         .map(|v| v == "1" || v.to_lowercase() == "true")
         .unwrap_or(true);
 
-    println!(
-        "> [env] FD_USE_ANON_WKSP={:?}",
-        std::env::var("FD_USE_ANON_WKSP")
-    );
-    println!("> [build] use_anonymous={}", use_anonymous);
-
     let mut topo = if use_anonymous {
         println!("> [build] using anonymous wksps (mem-backed)");
+
+        let page_size =
+            std::env::var("FD_PAGE_SIZE")
+                .ok()
+                .and_then(|s| match s.to_lowercase().as_str() {
+                    "normal" | "4k" => Some(PageSize::Normal),
+                    "huge" | "2m" => Some(PageSize::Huge),
+                    "gigantic" | "1g" => Some(PageSize::Gigantic),
+                    _ => None,
+                });
+
+        if let Some(ref ps) = page_size {
+            let page_name = match ps {
+                PageSize::Normal => "normal (4KB)",
+                PageSize::Huge => "huge (2MB)",
+                PageSize::Gigantic => "gigantic (1GB)",
+            };
+            println!("   >> using {} pages (via FD_PAGE_SIZE)", page_name);
+        } else {
+            println!("   >> using default page_sz (set FD_PAGE_SIZE=normal)");
+            println!("   >> run [vendor_path]/util/shmem/fd_shmem_cfg alloc [page_cnt] [page_sz] [numa_node]");
+        }
+
         builder.build_anonymous(callback_ptr, Some(PageSize::Normal))?
     } else {
         println!("> [build] using wksps (disk-backed)");
