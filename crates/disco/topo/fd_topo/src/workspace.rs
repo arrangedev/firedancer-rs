@@ -1,7 +1,10 @@
 use core::ffi::CStr;
 use fd_topo_sys as sys;
 
-use crate::types::{PageSize, _TopoInternal, _WorkspaceInternal};
+use crate::{
+    error,
+    types::{PageSize, _TopoInternal, _WorkspaceInternal},
+};
 
 /// A memory management component that is comprised of multiple orchestrated
 /// tiles, objects for them to access, and sits on top of one or more
@@ -77,17 +80,17 @@ impl Workspace {
             );
 
             if wksp_join.is_null() {
-                let page_type = match requested_page_sz {
+                let _page_type = match requested_page_sz {
                     x if x == sys::FD_SHMEM_NORMAL_PAGE_SZ as u64 => "normal (4KB)",
                     x if x == sys::FD_SHMEM_HUGE_PAGE_SZ as u64 => "huge (2MB)",
                     x if x == sys::FD_SHMEM_GIGANTIC_PAGE_SZ as u64 => "gigantic (1GB)",
                     _ => "unknown",
                 };
 
-                panic!(
+                error!(
                     "Failed to create anonymous workspace '{}' with {} pages.",
                     wksp_name.to_str().unwrap_or("unknown"),
-                    page_type
+                    _page_type
                 );
             }
 

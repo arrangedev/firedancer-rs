@@ -3,10 +3,13 @@ name = "fd_topo"
 version.workspace = true
 edition.workspace = true
 
+[features]
+logging = ["dep:fd_log"]
+
 [dependencies]
 fd_topo_sys = { path = "../fd_topo_sys" }
+fd_log = { path = "../../../util/log/fd_log", optional = true }
 firedancer-rs-common = { path = "../../../common" }
-const_format = "0.2.35"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

@@ -18,6 +18,9 @@ use fd_topo_sys as sys;
 use std::ffi::CString;
 use std::sync::Once;
 
+#[cfg(feature = "logging")]
+use fd_log::{debug, error, info, warn};
+
 pub mod builder;
 pub mod cpu_topo;
 pub mod error;
@@ -452,13 +455,13 @@ impl Topo {
             let result = unsafe { libc::waitpid(child_pid, &mut status as *mut i32, 0) };
 
             if result == -1 {
-                // eprintln!(
-                //     "Failed to wait for tile {}: {}",
-                //     tile_name,
-                //     std::io::Error::last_os_error()
-                // );
+                warn!(
+                    "Failed to wait for tile-{}: {}",
+                    tile_name,
+                    std::io::Error::last_os_error()
+                );
             } else if status != 0 {
-                //eprintln!("Tile {} exited with status: {}", tile_name, status);
+                warn!("Tile {} exited with status: {}", tile_name, status);
             }
         }
 
@@ -523,6 +526,82 @@ impl Drop for Topo {
 
 unsafe impl Send for Topo {}
 unsafe impl Sync for Topo {}
+
+#[macro_export]
+macro_rules! noop {
+    () => {
+        #[allow(unused_unsafe)]
+        unsafe {
+            core::arch::asm!("nop")
+        };
+    };
+}
+
+#[macro_export]
+macro_rules! debug {
+        ($($arg:tt)*) => {
+            #[cfg(feature = "logging")]
+            {
+                fd_log::fd_log_debug!($($arg)*)
+            }
+            #[cfg(not(feature = "logging"))]
+            {
+                $crate::noop!();
+            }
+        };
+    }
+
+#[macro_export]
+macro_rules! info {
+        ($($arg:tt)*) => {
+            #[cfg(feature = "logging")]
+            {
+                fd_log::fd_log_info!($($arg)*)
+            }
+            #[cfg(not(feature = "logging"))]
+            {
+                $crate::noop!();
+            }
+        };
+    }
+
+#[macro_export]
+macro_rules! notice {
+        ($($arg:tt)*) => {
+            #[cfg(feature = "logging")]
+            {
+                fd_log::fd_log_notice!($($arg)*)
+            }
+        };
+    }
+
+#[macro_export]
+macro_rules! warn {
+        ($($arg:tt)*) => {
+            #[cfg(feature = "logging")]
+            {
+                fd_log::fd_log_warn!($($arg)*)
+            }
+            #[cfg(not(feature = "logging"))]
+            {
+                $crate::noop!();
+            }
+        };
+    }
+
+#[macro_export]
+macro_rules! error {
+        ($($arg:tt)*) => {
+            #[cfg(feature = "logging")]
+            {
+                fd_log::fd_log_error!($($arg)*)
+            }
+            #[cfg(not(feature = "logging"))]
+            {
+                $crate::noop!();
+            }
+        };
+    }
 
 #[cfg(test)]
 mod tests {
