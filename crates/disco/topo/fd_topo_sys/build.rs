@@ -283,6 +283,8 @@ fn init_cc(
             .file(util_path.join("shmem/fd_numa_linux.c"))
             .file(util_path.join("wksp/fd_wksp_admin.c"))
             .file(util_path.join("wksp/fd_wksp_user.c"))
+            .file(util_path.join("wksp/fd_wksp_used_treap.c"))
+            .file(util_path.join("wksp/fd_wksp_free_treap.c"))
             .file(util_path.join("pod/fd_pod.c"))
             .file(util_path.join("sandbox/fd_sandbox.c"))
             .file(util_path.join("fd_hash.c"))
