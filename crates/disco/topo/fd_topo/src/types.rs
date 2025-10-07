@@ -46,6 +46,21 @@ pub enum PageSize {
     Gigantic = sys::FD_SHMEM_GIGANTIC_PAGE_SZ,
 }
 
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TileExecutionMode {
+    /// Run a single tile in its own process with full sandboxing
+    Single,
+    /// Run multiple tiles, each in its own separate process with full sandboxing
+    Isolated,
+}
+
+impl Default for TileExecutionMode {
+    fn default() -> Self {
+        Self::Isolated
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SandboxConfig {
     /// enable full sandboxing (default: false)

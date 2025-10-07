@@ -2,8 +2,8 @@ use std::{ffi::CStr, thread::sleep, time::Duration};
 
 use fd_topo::{
     types::{ActiveObject, ActiveTile, ActiveTopology},
-    CpuTopology, ObjectCallbacks, PageSize, Result, SandboxConfig, TileRunner, TileRunnerRegistry,
-    Topo, TopoBuilder, TopologyCallbacks,
+    CpuTopology, ObjectCallbacks, PageSize, Result, SandboxConfig, TileExecutionMode, TileRunner,
+    TileRunnerRegistry, Topo, TopoBuilder, TopologyCallbacks,
 };
 
 const PROGNAME: &'static CStr = c"tachyon_fd";
@@ -382,7 +382,22 @@ fn simulate_execution(
         let uid = unsafe { libc::getuid() };
         let gid = unsafe { libc::getgid() };
 
-        match topo.run_all_tiles(uid, gid, tile_registry, sandbox_config) {
+        let execution_mode = match std::env::var("FD_EXECUTION_MODE").as_deref() {
+            Ok("single") => {
+                println!("   >> using single tile execution mode");
+                TileExecutionMode::Single
+            }
+            Ok("isolated") | _ => {
+                println!("   >> using isolated tile execution mode (default)");
+                TileExecutionMode::Isolated
+            }
+            _ => {
+                println!("   >> using isolated tile execution mode (default)");
+                TileExecutionMode::Isolated
+            }
+        };
+
+        match topo.run_tiles(uid, gid, tile_registry, sandbox_config, execution_mode) {
             Ok(()) => println!("   >> ✓ tiles started"),
             Err(e) => eprintln!("   >> ✗ err={e:?}"),
         }

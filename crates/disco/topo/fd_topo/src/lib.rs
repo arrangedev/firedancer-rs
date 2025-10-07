@@ -33,7 +33,7 @@ pub use error::{Result, TopoError};
 pub use link::Link;
 pub use object::Object;
 pub use tile::{Tile, TileRunner, TileRunnerRegistry};
-pub use types::{PageSize, SandboxConfig};
+pub use types::{PageSize, SandboxConfig, TileExecutionMode};
 pub use workspace::Workspace;
 
 use crate::{
@@ -360,7 +360,27 @@ impl Topo {
 
     #[cfg(target_os = "linux")]
     #[inline]
-    pub fn run_all_tiles(
+    pub fn run_tiles(
+        &mut self,
+        uid: u32,
+        gid: u32,
+        tile_registry: &TileRunnerRegistry,
+        sandbox_config: &crate::types::SandboxConfig,
+        execution_mode: crate::types::TileExecutionMode,
+    ) -> Result<()> {
+        match execution_mode {
+            crate::types::TileExecutionMode::Single => {
+                self.run_single_tile(uid, gid, tile_registry, sandbox_config)
+            }
+            crate::types::TileExecutionMode::Isolated => {
+                self.run_isolated_tiles(uid, gid, tile_registry, sandbox_config)
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[inline]
+    pub fn run_single_tile(
         &mut self,
         uid: u32,
         gid: u32,
@@ -376,13 +396,91 @@ impl Topo {
             };
 
             let runner = tile_registry.find_runner(tile_name);
+            if let Some(runner) = runner {
+                return self.run_tile(tile_id, uid, gid, Some(runner), sandbox_config);
+            }
+        }
+
+        Err(TopoError::NotFound)
+    }
+
+    #[cfg(target_os = "linux")]
+    #[inline]
+    pub fn run_isolated_tiles(
+        &mut self,
+        uid: u32,
+        gid: u32,
+        tile_registry: &TileRunnerRegistry,
+        sandbox_config: &crate::types::SandboxConfig,
+    ) -> Result<()> {
+        let mut child_pids = Vec::new();
+
+        for tile_id in 0..self.tile_cnt() {
+            let tile_name = unsafe {
+                let tile_ptr = &(*self.inner).tiles[tile_id];
+                CStr::from_ptr(tile_ptr.name.as_ptr())
+                    .to_str()
+                    .unwrap_or("")
+            };
+
+            let runner = tile_registry.find_runner(tile_name);
             if runner.is_none() {
                 continue;
             }
 
-            self.run_tile(tile_id, uid, gid, runner, sandbox_config)?;
+            let pid = unsafe { libc::fork() };
+
+            match pid {
+                -1 => {
+                    return Err(TopoError::SystemError);
+                }
+                0 => {
+                    if let Err(e) = self.run_tile(tile_id, uid, gid, runner, sandbox_config) {
+                        unsafe { libc::_exit(1) };
+                    }
+
+                    unsafe { libc::_exit(0) };
+                }
+                child_pid => {
+                    child_pids.push((tile_name.to_string(), child_pid));
+                }
+            }
         }
+
+        for (tile_name, child_pid) in child_pids {
+            let mut status: i32 = 0;
+            let result = unsafe { libc::waitpid(child_pid, &mut status as *mut i32, 0) };
+
+            if result == -1 {
+                // eprintln!(
+                //     "Failed to wait for tile {}: {}",
+                //     tile_name,
+                //     std::io::Error::last_os_error()
+                // );
+            } else if status != 0 {
+                //eprintln!("Tile {} exited with status: {}", tile_name, status);
+            }
+        }
+
         Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[inline]
+    pub fn run_all_tiles(
+        &mut self,
+        uid: u32,
+        gid: u32,
+        tile_registry: &TileRunnerRegistry,
+        sandbox_config: &crate::types::SandboxConfig,
+    ) -> Result<()> {
+        self.run_tiles(
+            uid,
+            gid,
+            tile_registry,
+            sandbox_config,
+            crate::types::TileExecutionMode::Isolated,
+        )
     }
 
     #[inline]
