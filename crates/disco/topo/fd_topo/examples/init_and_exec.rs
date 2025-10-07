@@ -105,7 +105,7 @@ fn main() -> Result<()> {
 
     let use_anonymous = std::env::var("FD_USE_ANON_WKSP")
         .map(|v| v == "1" || v.to_lowercase() == "true")
-        .unwrap_or(false);
+        .unwrap_or(true);
 
     let mut topo = if use_anonymous {
         println!("> [build] using anonymous wksps (mem-backed)");
