@@ -3,8 +3,8 @@ use std::{ffi::CStr, thread::sleep, time::Duration};
 use fd_topo::{
     fd_info, fd_notice,
     types::{ActiveObject, ActiveTile, ActiveTopology},
-    CpuTopology, ObjectCallbacks, PageSize, Result, SandboxConfig, TileRunner, TileRunnerRegistry,
-    Topo, TopoBuilder, TopologyCallbacks,
+    CpuTopology, ObjectCallbacks, PageSize, Result, SandboxConfig, TileExecutionMode, TileRunner,
+    TileRunnerRegistry, Topo, TopoBuilder, TopologyCallbacks,
 };
 
 const PROGNAME: &'static CStr = c"tachyon_fd";
