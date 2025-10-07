@@ -251,7 +251,6 @@ impl TopoBuilder {
         Ok(())
     }
 
-    /// Add an output link to a tile
     #[inline]
     pub fn add_tile_output(
         &mut self,
@@ -273,7 +272,6 @@ impl TopoBuilder {
         Ok(())
     }
 
-    /// Automatically layout tiles onto CPUs
     #[inline]
     pub fn auto_layout(&mut self, reserve_agave_cores: bool) -> Result<()> {
         unsafe {
@@ -301,6 +299,31 @@ impl TopoBuilder {
                 if result != 0 {
                     return Err(TopoError::SystemError);
                 }
+            }
+
+            let topo = Topo::from_raw(this.inner, true);
+
+            Ok(topo)
+        }
+    }
+
+    /// Build the topology using anonymous workspaces
+    ///
+    /// Anonymous workspaces exist only in memory and don't require
+    /// setting up the filesystem for shared memory. They're also
+    /// automatically cleaned up when the process exits.
+    pub fn build_anonymous(
+        self,
+        callbacks: *mut *mut sys::fd_topo_obj_callbacks_t,
+    ) -> Result<Topo> {
+        let mut this = ManuallyDrop::new(self);
+
+        unsafe {
+            sys::fd_topob_finish(this.inner, callbacks);
+            for i in 0..(*this.inner).wksp_cnt {
+                let wksp_ptr = &mut (*this.inner).workspaces[i as usize];
+                let mut workspace = Workspace::from_raw(wksp_ptr);
+                workspace.create_anonymous(this.inner)?;
             }
 
             let topo = Topo::from_raw(this.inner, true);

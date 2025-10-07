@@ -158,12 +158,14 @@ fn generate_header(
 #include "{}/fd_cpu_topo.h"
 #include "{}/fd_util.h"
 #include "{}/fd_shmem_private.h"
+#include "{}/fd_wksp.h"
 "#,
         topo_path.canonicalize().unwrap().display(),
         topo_path.canonicalize().unwrap().display(),
         topo_path.canonicalize().unwrap().display(),
         util_path.canonicalize().unwrap().display(),
-        util_path.join("shmem").canonicalize().unwrap().display()
+        util_path.join("shmem").canonicalize().unwrap().display(),
+        util_path.join("wksp").canonicalize().unwrap().display()
     );
 
     #[cfg(target_os = "linux")]
@@ -208,6 +210,8 @@ fn init_bindgen(
         .allowlist_function("fd_topob_.*")
         .allowlist_function("fd_cpu_topo_.*")
         .allowlist_function("fd_numa_.*")
+        .allowlist_function("fd_wksp_.*")
+        .allowlist_function("fd_shmem_.*")
         .allowlist_function("fd_boot")
         .allowlist_function("fd_halt")
         .allowlist_type("fd_topo_.*")

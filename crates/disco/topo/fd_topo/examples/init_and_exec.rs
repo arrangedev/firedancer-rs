@@ -2,6 +2,7 @@ use std::ffi::CStr;
 
 use fd_topo::{CallbackRegistry, CpuTopology, ObjectCallbacks, Result, TopoBuilder};
 
+const PROGNAME: &'static CStr = c"tachyon_fd";
 const VERIFY_NAMES: [&'static CStr; 6] = [
     c"verify_0",
     c"verify_1",
@@ -46,7 +47,7 @@ const ALL_OBJECTS: [&'static CStr; 13] = [
 
 fn main() -> Result<()> {
     let cpu_topo = match std::env::var("FD_CPU_METHOD").as_deref() {
-        Ok("thin") => CpuTopology::new_simple()?,
+        Ok("thin") => CpuTopology::new_simple(PROGNAME)?,
         Ok("full") => {
             let cpu_count = std::env::var("FD_CPU_COUNT")
                 .unwrap_or_else(|_| "6".to_string())
@@ -58,11 +59,11 @@ fn main() -> Result<()> {
                 .unwrap_or(1);
 
             println!("> [cpu-cfg] FD_CPU_METHOD=manual, cpus={cpu_count}, numa={numa_count}",);
-            CpuTopology::new_custom(cpu_count, numa_count)?
+            CpuTopology::new_custom(PROGNAME, cpu_count, numa_count)?
         }
-        _ => match CpuTopology::new_simple() {
+        _ => match CpuTopology::new_simple(PROGNAME) {
             Ok(topo) => topo,
-            Err(_) => CpuTopology::new_custom(6, 1)?,
+            Err(_) => CpuTopology::new_custom(PROGNAME, 6, 1)?,
         },
     };
 
@@ -102,7 +103,17 @@ fn main() -> Result<()> {
     let mut callbacks = create_callbacks()?;
     let callback_ptr = callbacks.finalize()?;
 
-    let mut topo = builder.build(callback_ptr, false)?;
+    let use_anonymous = std::env::var("FD_USE_ANON_WKSP")
+        .map(|v| v == "1" || v.to_lowercase() == "true")
+        .unwrap_or(false);
+
+    let mut topo = if use_anonymous {
+        println!("> [build] using anonymous wksps (mem-backed)");
+        builder.build_anonymous(callback_ptr)?
+    } else {
+        println!("> [build] using wksps (disk-backed)");
+        builder.build(callback_ptr, false)?
+    };
 
     analyze_topology(&topo)?;
     simulate_execution(&mut topo)?;
@@ -251,13 +262,13 @@ fn analyze_topology(topo: &fd_topo::Topo) -> Result<()> {
 
     println!(
         "   >> wksps={} links={} tiles={} objs={}",
-        topo.workspace_count(),
-        topo.link_count(),
-        topo.tile_count(),
-        topo.object_count()
+        topo.workspace_cnt(),
+        topo.link_cnt(),
+        topo.tile_cnt(),
+        topo.object_cnt()
     );
 
-    if let Some(net_wksp_id) = topo.find_workspace("net") {
+    if let Some(net_wksp_id) = topo.find_wksp("net") {
         println!("   >> ✓ wksp=net id={}", net_wksp_id);
     }
 
@@ -278,8 +289,8 @@ fn analyze_topology(topo: &fd_topo::Topo) -> Result<()> {
         total_mlock / (1024 * 1024)
     );
 
-    let verify_tile_count = topo.tile_name_count("verify");
-    let bank_tile_count = topo.tile_name_count("bank");
+    let verify_tile_count = topo.tile_name_cnt("verify");
+    let bank_tile_count = topo.tile_name_cnt("bank");
     println!("   >> parallelism: verify={verify_tile_count} bank={bank_tile_count}",);
 
     println!("     >>> ✓ topology verified");
@@ -290,9 +301,9 @@ fn analyze_topology(topo: &fd_topo::Topo) -> Result<()> {
 fn simulate_execution(topo: &mut fd_topo::Topo) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
-        println!("> [wksp] joining workspaces: {}", topo.workspace_count());
+        println!("> [wksp] joining workspaces: {}", topo.workspace_cnt());
 
-        match topo.join_workspaces(false) {
+        match topo.join_wksps(false) {
             Ok(()) => println!("   >> ✓ workspaces joined"),
             Err(e) => eprintln!("   >> ✗ err={e:?}"),
         }
@@ -301,8 +312,8 @@ fn simulate_execution(topo: &mut fd_topo::Topo) -> Result<()> {
         topo.fill();
 
         println!("   >> initializing tile contexts");
-        for tile_id in 0..topo.tile_count() {
-            match topo.join_tile_workspaces(tile_id) {
+        for tile_id in 0..topo.tile_cnt() {
+            match topo.join_tile_wksps(tile_id) {
                 Ok(()) => match topo.fill_tile(tile_id) {
                     Ok(()) => println!("   >> ✓ {tile_id} initialized"),
                     Err(e) => eprintln!("   >> ✗ err={e:?} tile-{tile_id}"),
@@ -327,9 +338,9 @@ fn simulate_execution(topo: &mut fd_topo::Topo) -> Result<()> {
     {
         println!(
             "   >> workspaces={}, tiles={}, links={}",
-            topo.workspace_count(),
-            topo.tile_count(),
-            topo.link_count()
+            topo.workspace_cnt(),
+            topo.tile_cnt(),
+            topo.link_cnt()
         );
     }
 

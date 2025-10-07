@@ -1,19 +1,15 @@
-//! Workspace management for Firedancer topology.
-//!
-//! A workspace is a Firedancer specific memory management structure that
-//! sits on top of 1 or more memory mapped gigantic or huge pages mounted
-//! to the hugetlbfs.
-
 use core::ffi::CStr;
 use fd_topo_sys as sys;
 
+/// A memory management component that is comprised of multiple orchestrated
+/// tiles, objects for them to access, and sits on top of one or more
+/// memory mapped gigantic or huge pages mounted to the hugetlbfs.
+#[repr(C)]
 pub struct Workspace {
     inner: *mut sys::fd_topo_wksp_t,
 }
 
 impl Workspace {
-    /// Create the shared memory region for this workspace.
-    /// This must be called before attempting to join
     pub fn create(
         &mut self,
         topo: *mut sys::fd_topo_t,
@@ -32,32 +28,70 @@ impl Workspace {
         Ok(())
     }
 
+    /// Create an anonymous workspace
+    ///
+    /// Anonymous workspaces don't require shared memory setup.
+    /// They exist only in memory and are automatically cleaned up when the process exits.
+    pub fn create_anonymous(&mut self, topo: *mut sys::fd_topo_t) -> crate::Result<()> {
+        unsafe {
+            let page_cnt = (*self.inner).__bindgen_anon_1.page_cnt;
+            let page_sz = (*self.inner).__bindgen_anon_1.page_sz;
+            let _total_footprint = (*self.inner).__bindgen_anon_1.total_footprint;
+
+            if page_cnt == 0 || page_sz == 0 {
+                return Err(crate::TopoError::SystemError);
+            }
+
+            let wksp_name = core::ffi::CStr::from_ptr((*self.inner).name.as_ptr());
+            let app_name = core::ffi::CStr::from_ptr((*topo).app_name.as_ptr());
+
+            let combined_name = format!(
+                "{}_{}\0",
+                app_name.to_str().unwrap_or("app"),
+                wksp_name.to_str().unwrap_or("wksp")
+            );
+
+            let wksp_join = sys::fd_wksp_new_anonymous(
+                page_sz,
+                page_cnt,
+                sys::fd_shmem_cpu_idx((*self.inner).numa_idx),
+                combined_name.as_ptr() as *const i8,
+                (*self.inner).__bindgen_anon_1.part_max,
+            );
+
+            if wksp_join.is_null() {
+                return Err(crate::TopoError::SystemError);
+            }
+
+            (*self.inner).__bindgen_anon_1.wksp = wksp_join;
+        }
+        Ok(())
+    }
+
     /// Create a workspace wrapper from a raw pointer.
     ///
-    /// # Safety
-    ///
-    /// The caller must ensure that `ptr` is a valid pointer to an initialized
+    /// SAFETY: caller must ensure that `ptr` is a valid pointer to an initialized
     /// `fd_topo_wksp_t` that remains valid for the lifetime of this `Workspace`.
     pub unsafe fn from_raw(ptr: *mut sys::fd_topo_wksp_t) -> Self {
         Self { inner: ptr }
     }
 
-    /// Get the raw pointer to the underlying workspace.
+    #[inline]
     pub fn as_ptr(&self) -> *const sys::fd_topo_wksp_t {
         self.inner
     }
 
-    /// Get a mutable raw pointer to the underlying workspace.
+    #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut sys::fd_topo_wksp_t {
         self.inner
     }
 
-    /// Get the workspace ID.
+    #[inline]
     pub fn id(&self) -> usize {
         unsafe { (*self.inner).id as usize }
     }
 
-    /// Get the workspace name.
+    #[inline]
     pub fn name(&self) -> &str {
         unsafe {
             CStr::from_ptr((*self.inner).name.as_ptr())
@@ -66,42 +100,46 @@ impl Workspace {
         }
     }
 
-    /// Get the NUMA node index for this workspace.
+    #[inline]
     pub fn numa_idx(&self) -> usize {
         unsafe { (*self.inner).numa_idx as usize }
     }
 
-    /// Check if the workspace uses locked pages.
+    /// if the workspace uses locked pages
+    #[inline]
     pub fn is_locked(&self) -> bool {
         unsafe { (*self.inner).is_locked != 0 }
     }
 
-    /// Get the page size for this workspace.
-    pub fn page_size(&self) -> usize {
+    /// page size for this workspace
+    #[inline]
+    pub fn page_sz(&self) -> usize {
         unsafe { (*self.inner).__bindgen_anon_1.page_sz as usize }
     }
 
-    /// Get the number of pages in this workspace.
-    pub fn page_count(&self) -> usize {
+    /// number of pages in this workspace
+    #[inline]
+    pub fn page_cnt(&self) -> usize {
         unsafe { (*self.inner).__bindgen_anon_1.page_cnt as usize }
     }
 
-    /// Get the maximum number of partitions.
+    #[inline]
     pub fn partition_max(&self) -> usize {
         unsafe { (*self.inner).__bindgen_anon_1.part_max as usize }
     }
 
-    /// Get the known footprint size in bytes.
+    #[inline]
     pub fn known_footprint(&self) -> usize {
         unsafe { (*self.inner).__bindgen_anon_1.known_footprint as usize }
     }
 
-    /// Get the total footprint size in bytes.
+    #[inline]
     pub fn total_footprint(&self) -> usize {
         unsafe { (*self.inner).__bindgen_anon_1.total_footprint as usize }
     }
 
-    /// Check if the workspace is currently joined (mapped into the process).
+    /// if the workspace is currently mapped into the process (referred to as a "join")
+    #[inline]
     pub fn is_joined(&self) -> bool {
         unsafe { !(*self.inner).__bindgen_anon_1.wksp.is_null() }
     }

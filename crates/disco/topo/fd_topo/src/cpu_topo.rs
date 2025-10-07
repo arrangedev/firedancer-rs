@@ -1,3 +1,5 @@
+use core::ffi::CStr;
+
 use crate::Result;
 use fd_topo_sys as sys;
 
@@ -16,24 +18,14 @@ pub struct CpuTopology {
 }
 
 impl CpuTopology {
-    // /// initialize cpu topology using automatic detection from the operating system
-    // pub fn new() -> Result<Self> {
-    //     unsafe { crate::init() };
-
-    //     let mut cpus = unsafe { core::mem::zeroed::<sys::fd_topo_cpus_t>() };
-    //     unsafe { sys::fd_topo_cpus_init(&mut cpus) };
-
-    //     Ok(Self { inner: cpus })
-    // }
-
-    /// initialize cpu topology with custom configuration
-    ///
-    /// For a 6-core system with 1 NUMA node:
-    /// ```rust
-    /// let t = CpuTopology::new_custom(6, 1)?;
-    /// ```
-    pub fn new_custom(cpu_count: usize, numa_node_count: usize) -> Result<Self> {
-        unsafe { crate::init() };
+    /// initialize cpu topology with the desired config
+    #[inline]
+    pub fn new_custom(
+        progname: &'static CStr,
+        cpu_count: usize,
+        numa_node_count: usize,
+    ) -> Result<Self> {
+        unsafe { crate::init(progname) };
 
         let mut cpus = unsafe { core::mem::zeroed::<sys::fd_topo_cpus_t>() };
 
@@ -49,9 +41,13 @@ impl CpuTopology {
         Ok(Self { inner: cpus })
     }
 
+    /// initialize cpu topology with the default settings.
+    ///
     /// uses `get_nprocs()` internally, which avoids parsing sysfs
-    pub fn new_simple() -> Result<Self> {
-        unsafe { crate::init() };
+    /// and might work better on older systems
+    #[inline]
+    pub fn new_simple(progname: &'static CStr) -> Result<Self> {
+        unsafe { crate::init(progname) };
 
         let cpu_count = unsafe { sys::fd_numa_cpu_cnt() } as usize;
         let numa_node_count = unsafe { sys::fd_numa_node_cnt() } as usize;
@@ -60,17 +56,20 @@ impl CpuTopology {
             return Err(crate::TopoError::SystemError);
         }
 
-        Self::new_custom(cpu_count, numa_node_count.max(1))
+        Self::new_custom(progname, cpu_count, numa_node_count.max(1))
     }
 
+    #[inline]
     pub fn numa_node_count(&self) -> usize {
         self.inner.numa_node_cnt as usize
     }
 
+    #[inline]
     pub fn cpu_count(&self) -> usize {
         self.inner.cpu_cnt as usize
     }
 
+    #[inline]
     pub fn cpu(&self, index: usize) -> Option<Cpu> {
         if index >= self.cpu_count() {
             return None;
@@ -85,10 +84,12 @@ impl CpuTopology {
         })
     }
 
+    #[inline]
     pub fn cpus(&self) -> Vec<Cpu> {
         (0..self.cpu_count()).filter_map(|i| self.cpu(i)).collect()
     }
 
+    #[inline]
     pub fn cpus_on_numa_node(&self, numa_node: usize) -> Vec<Cpu> {
         self.cpus()
             .into_iter()
@@ -96,10 +97,12 @@ impl CpuTopology {
             .collect()
     }
 
+    #[inline]
     pub fn online_cpus(&self) -> Vec<Cpu> {
         self.cpus().into_iter().filter(|cpu| cpu.online).collect()
     }
 
+    #[inline]
     pub fn print(&mut self) {
         unsafe {
             sys::fd_topo_cpus_printf(&mut self.inner);
@@ -109,7 +112,7 @@ impl CpuTopology {
 
 impl Default for CpuTopology {
     fn default() -> Self {
-        Self::new_simple().expect("Failed to initialize CPU topology")
+        Self::new_simple(c"tch_fd_topo").expect("Failed to initialize CPU topology")
     }
 }
 

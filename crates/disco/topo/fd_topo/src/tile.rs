@@ -1,43 +1,37 @@
-//! Tile management for Firedancer topology.
-//!
-//! A tile is a unique process that is spawned by Firedancer to represent
-//! one thread of execution. Firedancer sandboxes all tiles to their own
-//! process for security reasons.
-
 use core::ffi::CStr;
 use fd_topo_sys as sys;
 
+/// A unique process spawned within a workspace, representing
+/// one thread of execution. All tiles are sandboxed to their
+/// own process for security reasons.
+#[repr(C)]
 pub struct Tile {
     inner: *mut sys::fd_topo_tile_t,
 }
 
 impl Tile {
-    /// Create a tile wrapper from a raw pointer.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that `ptr` is a valid pointer to an initialized
+    /// SAFETY: The caller must ensure that `ptr` is a valid pointer to an initialized
     /// `fd_topo_tile_t` that remains valid for the lifetime of this `Tile`.
     pub unsafe fn from_raw(ptr: *mut sys::fd_topo_tile_t) -> Self {
         Self { inner: ptr }
     }
 
-    /// Get the raw pointer to the underlying tile.
+    #[inline]
     pub fn as_ptr(&self) -> *const sys::fd_topo_tile_t {
         self.inner
     }
 
-    /// Get a mutable raw pointer to the underlying tile.
+    #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut sys::fd_topo_tile_t {
         self.inner
     }
 
-    /// Get the tile ID.
+    #[inline]
     pub fn id(&self) -> usize {
         unsafe { (*self.inner).id as usize }
     }
 
-    /// Get the tile name.
+    #[inline]
     pub fn name(&self) -> &str {
         unsafe {
             CStr::from_ptr((*self.inner).name.as_ptr())
@@ -46,23 +40,25 @@ impl Tile {
         }
     }
 
-    /// Get the tile kind ID.
+    #[inline]
     pub fn kind_id(&self) -> usize {
         unsafe { (*self.inner).kind_id as usize }
     }
 
-    /// Check if this is an Agave tile.
+    /// is this an agave tile?
+    #[inline]
     pub fn is_agave(&self) -> bool {
         unsafe { (*self.inner).is_agave != 0 }
     }
 
-    /// Check if the tile is allowed to shutdown gracefully.
+    /// is the tile allowed to shutdown gracefully?
+    #[inline]
     pub fn allow_shutdown(&self) -> bool {
         unsafe { (*self.inner).allow_shutdown != 0 }
     }
 
-    /// Get the CPU index this tile is pinned to.
-    /// Returns `None` if the tile is floating (not pinned).
+    /// cpu index this tile is pinned to -- will return `None` if floating
+    #[inline]
     pub fn cpu_idx(&self) -> Option<usize> {
         unsafe {
             let cpu_idx = (*self.inner).cpu_idx;
@@ -74,17 +70,19 @@ impl Tile {
         }
     }
 
-    /// Get the number of input links.
-    pub fn input_count(&self) -> usize {
+    /// number of input links
+    #[inline]
+    pub fn input_cnt(&self) -> usize {
         unsafe { (*self.inner).in_cnt as usize }
     }
 
-    /// Get the number of output links.
-    pub fn output_count(&self) -> usize {
+    /// number of output links
+    #[inline]
+    pub fn output_cnt(&self) -> usize {
         unsafe { (*self.inner).out_cnt as usize }
     }
 
-    /// Get the input link IDs.
+    #[inline]
     pub fn input_link_ids(&self) -> Vec<usize> {
         unsafe {
             let count = (*self.inner).in_cnt as usize;
@@ -96,7 +94,7 @@ impl Tile {
         }
     }
 
-    /// Get the output link IDs.
+    #[inline]
     pub fn output_link_ids(&self) -> Vec<usize> {
         unsafe {
             let count = (*self.inner).out_cnt as usize;
@@ -108,7 +106,8 @@ impl Tile {
         }
     }
 
-    /// Check if a specific input link is reliable.
+    /// is a specific input link reliable?
+    #[inline]
     pub fn is_input_link_reliable(&self, index: usize) -> Option<bool> {
         unsafe {
             if index < (*self.inner).in_cnt as usize {
@@ -119,7 +118,8 @@ impl Tile {
         }
     }
 
-    /// Check if a specific input link is polled.
+    /// is a specific input link polled?
+    #[inline]
     pub fn is_input_link_polled(&self, index: usize) -> Option<bool> {
         unsafe {
             if index < (*self.inner).in_cnt as usize {
@@ -130,28 +130,30 @@ impl Tile {
         }
     }
 
-    /// Get the tile object ID.
-    pub fn tile_object_id(&self) -> usize {
+    #[inline]
+    pub fn tile_obj_id(&self) -> usize {
         unsafe { (*self.inner).tile_obj_id as usize }
     }
 
-    /// Get the metrics object ID.
-    pub fn metrics_object_id(&self) -> usize {
+    #[inline]
+    pub fn metrics_obj_id(&self) -> usize {
         unsafe { (*self.inner).metrics_obj_id as usize }
     }
 
-    /// Get the keyswitch object ID.
-    pub fn keyswitch_object_id(&self) -> usize {
+    #[inline]
+    pub fn keyswitch_obj_id(&self) -> usize {
         unsafe { (*self.inner).keyswitch_obj_id as usize }
     }
 
-    /// Get the number of objects this tile uses.
-    pub fn uses_object_count(&self) -> usize {
+    /// number of objects this tile uses
+    #[inline]
+    pub fn uses_object_cnt(&self) -> usize {
         unsafe { (*self.inner).uses_obj_cnt as usize }
     }
 
-    /// Get the IDs of objects this tile uses.
-    pub fn uses_object_ids(&self) -> Vec<usize> {
+    /// ids of objects this tile uses
+    #[inline]
+    pub fn uses_obj_ids(&self) -> Vec<usize> {
         unsafe {
             let count = (*self.inner).uses_obj_cnt as usize;
             let mut ids = Vec::with_capacity(count);

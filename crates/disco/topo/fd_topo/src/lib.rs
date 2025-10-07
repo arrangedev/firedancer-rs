@@ -33,9 +33,9 @@ pub use workspace::Workspace;
 
 static INIT: Once = Once::new();
 
-pub unsafe fn init() {
+pub unsafe fn init(program_name: &'static CStr) {
     INIT.call_once(|| {
-        let program_name = b"fd_topo\0".as_ptr() as *mut i8;
+        let program_name = program_name.as_ptr() as *mut i8;
         let mut argv_array = [program_name, core::ptr::null_mut()];
         let mut argc = 1i32;
         let mut argv = argv_array.as_mut_ptr();
@@ -64,30 +64,25 @@ pub struct Topo {
 }
 
 impl Topo {
-    /// create a new topology from a raw pointer
-    ///
-    /// SAFETY: The caller must ensure that:
+    /// SAFETY: caller must ensure that:
     /// - `ptr` is a valid pointer to an initialized `fd_topo_t`
-    /// - The memory pointed to by `ptr` remains valid for the lifetime of this `Topo`
+    /// - Memory pointed to by `ptr` remains valid for the lifetime of this `Topo`
     /// - If `owned` is true, this `Topo` will take ownership and free the memory on drop
     pub unsafe fn from_raw(ptr: *mut sys::fd_topo_t, owned: bool) -> Self {
         Self { inner: ptr, owned }
     }
 
-    /// raw pointer to the underlying `fd_topo_t`
-    ///
-    /// SAFETY: The returned pointer is valid only as long as this `Topo` exists.
+    /// SAFETY: returned pointer is valid only as long as this `Topo` exists.
     pub fn as_ptr(&self) -> *const sys::fd_topo_t {
         self.inner
     }
 
-    /// mutable raw pointer to the underlying `fd_topo_t`
-    ///
-    /// SAFETY: The returned pointer is valid only as long as this `Topo` exists.
+    /// SAFETY: returned pointer is valid only as long as this `Topo` exists.
     pub fn as_mut_ptr(&mut self) -> *mut sys::fd_topo_t {
         self.inner
     }
 
+    #[inline]
     pub fn app_name(&self) -> &str {
         unsafe {
             let topo = &*self.inner;
@@ -97,23 +92,28 @@ impl Topo {
         }
     }
 
-    pub fn workspace_count(&self) -> usize {
+    #[inline]
+    pub fn workspace_cnt(&self) -> usize {
         unsafe { (*self.inner).wksp_cnt as usize }
     }
 
-    pub fn link_count(&self) -> usize {
+    #[inline]
+    pub fn link_cnt(&self) -> usize {
         unsafe { (*self.inner).link_cnt as usize }
     }
 
-    pub fn tile_count(&self) -> usize {
+    #[inline]
+    pub fn tile_cnt(&self) -> usize {
         unsafe { (*self.inner).tile_cnt as usize }
     }
 
-    pub fn object_count(&self) -> usize {
+    #[inline]
+    pub fn object_cnt(&self) -> usize {
         unsafe { (*self.inner).obj_cnt as usize }
     }
 
-    pub fn find_workspace(&self, name: &str) -> Option<usize> {
+    #[inline]
+    pub fn find_wksp(&self, name: &str) -> Option<usize> {
         let c_name = CString::new(name).ok()?;
         unsafe {
             let result = sys::fd_topo_find_wksp(self.inner, c_name.as_ptr());
@@ -125,7 +125,7 @@ impl Topo {
         }
     }
 
-    /// find a tile by name and kind id
+    #[inline]
     pub fn find_tile(&self, name: &str, kind_id: usize) -> Option<usize> {
         let c_name = CString::new(name).ok()?;
         unsafe {
@@ -138,7 +138,7 @@ impl Topo {
         }
     }
 
-    /// find a link by name and kind id
+    #[inline]
     pub fn find_link(&self, name: &str, kind_id: usize) -> Option<usize> {
         let c_name = CString::new(name).ok()?;
         unsafe {
@@ -151,29 +151,29 @@ impl Topo {
         }
     }
 
-    /// count tiles of a given name
-    pub fn tile_name_count(&self, name: &str) -> usize {
+    #[inline]
+    pub fn tile_name_cnt(&self, name: &str) -> usize {
         let c_name = CString::new(name).unwrap_or_default();
         unsafe { sys::fd_topo_tile_name_cnt(self.inner, c_name.as_ptr()) as usize }
     }
 
-    /// maximum amount of memory locked by any tile
+    #[inline]
     pub fn max_tile_mlock(&self) -> usize {
         unsafe { sys::fd_topo_mlock_max_tile(self.inner) as usize }
     }
 
-    /// total memory that will be locked
+    #[inline]
     pub fn total_mlock(&self) -> usize {
         unsafe { sys::fd_topo_mlock(self.inner) as usize }
     }
 
-    /// number of gigantic pages needed on a numa node
-    pub fn gigantic_page_count(&self, numa_idx: usize) -> usize {
+    #[inline]
+    pub fn gigantic_page_cnt(&self, numa_idx: usize) -> usize {
         unsafe { sys::fd_topo_gigantic_page_cnt(self.inner, numa_idx as u64) as usize }
     }
 
-    /// number of huge pages needed on a numa node
-    pub fn huge_page_count(&self, numa_idx: usize, include_anonymous: bool) -> usize {
+    #[inline]
+    pub fn huge_page_cnt(&self, numa_idx: usize, include_anonymous: bool) -> usize {
         unsafe {
             sys::fd_topo_huge_page_cnt(
                 self.inner,
@@ -183,7 +183,8 @@ impl Topo {
         }
     }
 
-    pub fn join_workspaces(&mut self, read_only: bool) -> Result<()> {
+    #[inline]
+    pub fn join_wksps(&mut self, read_only: bool) -> Result<()> {
         unsafe {
             let mode = if read_only {
                 // FD_SHMEM_JOIN_MODE_READ_ONLY = 0
@@ -197,24 +198,28 @@ impl Topo {
         Ok(())
     }
 
-    pub fn leave_workspaces(&mut self) {
+    #[inline]
+    pub fn leave_wksps(&mut self) {
         unsafe {
             sys::fd_topo_leave_workspaces(self.inner);
         }
     }
 
+    #[inline]
     pub fn fill(&mut self) {
         unsafe {
             sys::fd_topo_fill(self.inner);
         }
     }
 
+    #[inline]
     pub fn print_to_stdout(&self) {
         unsafe {
             sys::fd_topo_print_log(1, self.inner as *mut _);
         }
     }
 
+    #[inline]
     pub fn print_to_log(&self) {
         unsafe {
             sys::fd_topo_print_log(0, self.inner as *mut _);
@@ -222,8 +227,9 @@ impl Topo {
     }
 
     #[cfg(target_os = "linux")]
+    #[inline]
     pub fn run_tile(&mut self, tile_id: usize, uid: u32, gid: u32) -> Result<()> {
-        if tile_id >= self.tile_count() {
+        if tile_id >= self.tile_cnt() {
             return Err(TopoError::NotFound);
         }
 
@@ -248,15 +254,17 @@ impl Topo {
     }
 
     #[cfg(target_os = "linux")]
+    #[inline]
     pub fn run_all_tiles(&mut self, uid: u32, gid: u32) -> Result<()> {
-        for tile_id in 0..self.tile_count() {
+        for tile_id in 0..self.tile_cnt() {
             self.run_tile(tile_id, uid, gid)?;
         }
         Ok(())
     }
 
-    pub fn join_tile_workspaces(&mut self, tile_id: usize) -> Result<()> {
-        if tile_id >= self.tile_count() {
+    #[inline]
+    pub fn join_tile_wksps(&mut self, tile_id: usize) -> Result<()> {
+        if tile_id >= self.tile_cnt() {
             return Err(TopoError::NotFound);
         }
 
@@ -268,8 +276,9 @@ impl Topo {
         Ok(())
     }
 
+    #[inline]
     pub fn fill_tile(&mut self, tile_id: usize) -> Result<()> {
-        if tile_id >= self.tile_count() {
+        if tile_id >= self.tile_cnt() {
             return Err(TopoError::NotFound);
         }
 
@@ -285,10 +294,8 @@ impl Topo {
 impl Drop for Topo {
     fn drop(&mut self) {
         if self.owned && !self.inner.is_null() {
-            self.leave_workspaces();
-            // Note: The C library doesn't seem to provide a cleanup function
-            // for fd_topo_t, so we assume the memory management is handled
-            // externally or the topology is stack-allocated.
+            self.leave_wksps();
+            // lib doesn't provide a cleanup function
         }
     }
 }
@@ -302,7 +309,7 @@ mod tests {
 
     #[test]
     fn test_cpu_topology() {
-        let cpu_topo = CpuTopology::new_simple().expect("Failed to get CPU topology");
+        let cpu_topo = CpuTopology::new_simple(c"tch_fd_topo").expect("Failed to get CPU topology");
         assert!(cpu_topo.cpu_count() > 0, "Should have at least one CPU");
         assert!(
             cpu_topo.numa_node_count() > 0,
