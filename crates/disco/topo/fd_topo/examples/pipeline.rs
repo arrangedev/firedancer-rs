@@ -15,6 +15,26 @@ use fd_topo::{
 
 const PROGNAME: &'static CStr = c"sysmon_pipeline";
 
+const METRICS_WKSP: &'static CStr = c"metrics";
+const PROCESSING_WKSP: &'static CStr = c"processing";
+const OUTPUT_WKSP: &'static CStr = c"output";
+
+const CPUMEM_TILE: &'static CStr = c"cpumem";
+const DISK_TILE: &'static CStr = c"dsk";
+const NETWORK_TILE: &'static CStr = c"net";
+const PROCESSOR_TILE: &'static CStr = c"proc";
+const WRITER_TILE: &'static CStr = c"writer";
+
+const CPUMEM_LINK: &'static CStr = c"cm_pr";
+const DISK_LINK: &'static CStr = c"dsk_pr";
+const NETWORK_LINK: &'static CStr = c"net_pr";
+const PROCESSOR_LINK: &'static CStr = c"proc_wr";
+
+const CPUMEM_OBJECT: &'static CStr = c"cm_dat";
+const DISK_OBJECT: &'static CStr = c"dsk_dat";
+const NETWORK_OBJECT: &'static CStr = c"net_dat";
+const PROCESSOR_OBJECT: &'static CStr = c"cmp_dat";
+
 // Mutable statics are generally a bad idea, but fuck it
 static mut PREV_CPU_METRICS: Option<CpuMemMetrics> = None;
 static mut PREV_DISK_METRICS: Option<DiskMetrics> = None;
@@ -78,12 +98,7 @@ struct AggregatedMetrics {
     io_wait_percent: f32,
 }
 
-const METRIC_OBJECTS: [&'static CStr; 4] = [
-    c"cpumem_data",
-    c"disk_data",
-    c"network_data",
-    c"aggregated_data",
-];
+const METRIC_OBJECTS: [&'static CStr; 4] = [c"cm_dat", c"dsk_dat", c"net_dat", c"cmp_dat"];
 
 const AUTO_OBJECTS: [&'static CStr; 6] = [
     c"tile",
@@ -168,13 +183,13 @@ fn main() -> Result<()> {
 fn create_workspaces(builder: &mut TopoBuilder) -> Result<()> {
     println!("> [wksp] creating workspaces");
 
-    builder.add_wksp(c"metrics")?;
+    builder.add_wksp(METRICS_WKSP)?;
     println!("   >> ✓ metrics_wksp");
 
-    builder.add_wksp(c"processing")?;
+    builder.add_wksp(PROCESSING_WKSP)?;
     println!("   >> ✓ processing_wksp");
 
-    builder.add_wksp(c"output")?;
+    builder.add_wksp(OUTPUT_WKSP)?;
     println!("   >> ✓ output_wksp");
 
     println!("     >>> ✓ wksps created");
@@ -184,18 +199,16 @@ fn create_workspaces(builder: &mut TopoBuilder) -> Result<()> {
 fn create_links(builder: &mut TopoBuilder) -> Result<()> {
     println!("> [link] creating links");
 
-    // Links from metric collectors to processor
-    builder.add_link(c"cpumem_to_proc", c"processing", 512, 1024, 8)?;
+    builder.add_link(CPUMEM_LINK, PROCESSING_WKSP, 512, 1024, 8)?;
     println!("   >> ✓ link: cpumem_to_proc (depth: 512, mtu: 1024)");
 
-    builder.add_link(c"disk_to_proc", c"processing", 512, 1024, 8)?;
+    builder.add_link(DISK_LINK, PROCESSING_WKSP, 512, 1024, 8)?;
     println!("   >> ✓ link: disk_to_proc (depth: 512, mtu: 1024)");
 
-    builder.add_link(c"network_to_proc", c"processing", 512, 1024, 8)?;
+    builder.add_link(NETWORK_LINK, PROCESSING_WKSP, 512, 1024, 8)?;
     println!("   >> ✓ link: network_to_proc (depth: 512, mtu: 1024)");
 
-    // Link from processor to writer
-    builder.add_link(c"proc_to_writer", c"output", 256, 2048, 4)?;
+    builder.add_link(PROCESSOR_LINK, OUTPUT_WKSP, 256, 2048, 4)?;
     println!("   >> ✓ link: proc_to_writer (depth: 256, mtu: 2048)");
 
     println!("     >>> ✓ links created");
@@ -205,35 +218,44 @@ fn create_links(builder: &mut TopoBuilder) -> Result<()> {
 fn create_tiles(builder: &mut TopoBuilder) -> Result<()> {
     println!("> [tile] creating tiles");
 
-    // CPU/Memory metrics collector
-    builder.add_tile(c"cpumem", c"metrics", c"metrics", Some(0), false, false)?;
-    builder.add_object(c"cpumem_data", c"metrics")?;
+    builder.add_tile(
+        CPUMEM_TILE,
+        METRICS_WKSP,
+        METRICS_WKSP,
+        Some(0),
+        false,
+        false,
+    )?;
+    builder.add_object(CPUMEM_OBJECT, METRICS_WKSP)?;
     println!("   >> ✓ cpumem (cpuid=0)");
 
-    // Disk I/O metrics collector
-    builder.add_tile(c"disk", c"metrics", c"metrics", Some(1), false, false)?;
-    builder.add_object(c"disk_data", c"metrics")?;
+    builder.add_tile(DISK_TILE, METRICS_WKSP, METRICS_WKSP, Some(1), false, false)?;
+    builder.add_object(DISK_OBJECT, METRICS_WKSP)?;
     println!("   >> ✓ disk (cpuid=1)");
 
-    // Network metrics collector
-    builder.add_tile(c"network", c"metrics", c"metrics", Some(2), false, false)?;
-    builder.add_object(c"network_data", c"metrics")?;
+    builder.add_tile(
+        NETWORK_TILE,
+        METRICS_WKSP,
+        METRICS_WKSP,
+        Some(2),
+        false,
+        false,
+    )?;
+    builder.add_object(NETWORK_OBJECT, METRICS_WKSP)?;
     println!("   >> ✓ network (cpuid=2)");
 
-    // Processor tile
     builder.add_tile(
-        c"processor",
-        c"processing",
-        c"processing",
+        PROCESSOR_TILE,
+        PROCESSING_WKSP,
+        PROCESSING_WKSP,
         Some(3),
         false,
         false,
     )?;
-    builder.add_object(c"aggregated_data", c"processing")?;
+    builder.add_object(PROCESSOR_OBJECT, PROCESSING_WKSP)?;
     println!("   >> ✓ processor (cpuid=3)");
 
-    // Writer tile
-    builder.add_tile(c"writer", c"output", c"output", Some(4), false, false)?;
+    builder.add_tile(WRITER_TILE, OUTPUT_WKSP, OUTPUT_WKSP, Some(4), false, false)?;
     println!("   >> ✓ writer (cpuid=4)");
 
     println!("     >>> ✓ tiles created");
@@ -243,45 +265,37 @@ fn create_tiles(builder: &mut TopoBuilder) -> Result<()> {
 fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
     println!("> [tile] wiring tiles");
 
-    // Wire metric collectors to processor
-    builder.add_tile_output(c"cpumem", 0, c"cpumem_to_proc", 0)?;
+    builder.add_tile_output(CPUMEM_TILE, 0, CPUMEM_LINK, 0)?;
     builder.add_tile_input(
-        c"processor",
+        PROCESSOR_TILE,
         0,
-        c"processing",
-        c"cpumem_to_proc",
+        PROCESSING_WKSP,
+        CPUMEM_LINK,
         0,
         true,
         true,
     )?;
 
-    builder.add_tile_output(c"disk", 0, c"disk_to_proc", 0)?;
+    builder.add_tile_output(DISK_TILE, 0, DISK_LINK, 0)?;
+    builder.add_tile_input(PROCESSOR_TILE, 0, PROCESSING_WKSP, DISK_LINK, 0, true, true)?;
+
+    builder.add_tile_output(NETWORK_TILE, 0, NETWORK_LINK, 0)?;
     builder.add_tile_input(
-        c"processor",
+        PROCESSOR_TILE,
         0,
-        c"processing",
-        c"disk_to_proc",
+        PROCESSING_WKSP,
+        NETWORK_LINK,
         0,
         true,
         true,
     )?;
 
-    builder.add_tile_output(c"network", 0, c"network_to_proc", 0)?;
-    builder.add_tile_input(
-        c"processor",
-        0,
-        c"processing",
-        c"network_to_proc",
-        0,
-        true,
-        true,
-    )?;
+    builder.add_tile_output(PROCESSOR_TILE, 0, PROCESSOR_LINK, 0)?;
+    builder.add_tile_input(WRITER_TILE, 0, OUTPUT_WKSP, PROCESSOR_LINK, 0, true, true)?;
 
-    // Wire processor to writer
-    builder.add_tile_output(c"processor", 0, c"proc_to_writer", 0)?;
-    builder.add_tile_input(c"writer", 0, c"output", c"proc_to_writer", 0, true, true)?;
-
-    println!("   >> ✓ metric collectors -> processor");
+    println!("   >> ✓ cpumem -> processor");
+    println!("   >> ✓ disk -> processor");
+    println!("   >> ✓ network -> processor");
     println!("   >> ✓ processor -> writer");
 
     println!("     >>> ✓ topology wired");
@@ -406,18 +420,19 @@ fn create_tile_runners() -> Result<TileRunnerRegistry> {
     let mut registry = TileRunnerRegistry::new();
 
     registry.add_runner(
-        TileRunner::new(c"cpumem", cpumem_tile_run).with_allowed_fds(populate_stdio_fds),
-    )?;
-    registry
-        .add_runner(TileRunner::new(c"disk", disk_tile_run).with_allowed_fds(populate_stdio_fds))?;
-    registry.add_runner(
-        TileRunner::new(c"network", net_tile_run).with_allowed_fds(populate_stdio_fds),
+        TileRunner::new(CPUMEM_TILE, cpumem_tile_run).with_allowed_fds(populate_stdio_fds),
     )?;
     registry.add_runner(
-        TileRunner::new(c"processor", proc_tile_run).with_allowed_fds(populate_stdio_fds),
+        TileRunner::new(DISK_TILE, disk_tile_run).with_allowed_fds(populate_stdio_fds),
     )?;
     registry.add_runner(
-        TileRunner::new(c"writer", writer_tile_run).with_allowed_fds(populate_stdio_fds),
+        TileRunner::new(NETWORK_TILE, net_tile_run).with_allowed_fds(populate_stdio_fds),
+    )?;
+    registry.add_runner(
+        TileRunner::new(PROCESSOR_TILE, proc_tile_run).with_allowed_fds(populate_stdio_fds),
+    )?;
+    registry.add_runner(
+        TileRunner::new(WRITER_TILE, writer_tile_run).with_allowed_fds(populate_stdio_fds),
     )?;
 
     Ok(registry)
@@ -736,10 +751,10 @@ unsafe extern "C" fn calculate_footprint(
     let obj_name = std::ffi::CStr::from_ptr((*obj).name.as_ptr());
 
     match obj_name.to_bytes() {
-        b"cpumem_data" => std::mem::size_of::<CpuMemMetrics>() as u64,
-        b"disk_data" => std::mem::size_of::<DiskMetrics>() as u64,
-        b"network_data" => std::mem::size_of::<NetworkMetrics>() as u64,
-        b"aggregated_data" => std::mem::size_of::<AggregatedMetrics>() as u64,
+        b"cm_dat" => std::mem::size_of::<CpuMemMetrics>() as u64,
+        b"dsk_dat" => std::mem::size_of::<DiskMetrics>() as u64,
+        b"net_dat" => std::mem::size_of::<NetworkMetrics>() as u64,
+        b"cmp_dat" => std::mem::size_of::<AggregatedMetrics>() as u64,
         b"tile" => 4096,
         b"metrics" => 8192,
         b"keyswitch" => 64,
@@ -757,10 +772,10 @@ unsafe extern "C" fn calculate_align(
     let obj_name = std::ffi::CStr::from_ptr((*obj).name.as_ptr());
 
     match obj_name.to_bytes() {
-        b"cpumem_data" => std::mem::align_of::<CpuMemMetrics>() as u64,
-        b"disk_data" => std::mem::align_of::<DiskMetrics>() as u64,
-        b"network_data" => std::mem::align_of::<NetworkMetrics>() as u64,
-        b"aggregated_data" => std::mem::align_of::<AggregatedMetrics>() as u64,
+        b"cm_dat" => std::mem::align_of::<CpuMemMetrics>() as u64,
+        b"dsk_dat" => std::mem::align_of::<DiskMetrics>() as u64,
+        b"net_dat" => std::mem::align_of::<NetworkMetrics>() as u64,
+        b"cmp_dat" => std::mem::align_of::<AggregatedMetrics>() as u64,
         b"mcache" | b"dcache" => 64, // cache line
         _ => 64,
     }
