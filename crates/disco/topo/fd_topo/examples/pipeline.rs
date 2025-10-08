@@ -30,6 +30,7 @@ const CPUMEM_LINK: &'static CStr = c"cm_to_pr";
 const DISK_LINK: &'static CStr = c"dk_to_pr";
 const NETWORK_LINK: &'static CStr = c"nt_to_pr";
 const PROCESSOR_LINK: &'static CStr = c"pr_to_wr";
+const METRICS_LINK: &'static CStr = c"metr_coll";
 
 const CPUMEM_OBJECT: &'static CStr = c"cpumem_data"; // 11 chars - OK
 const DISK_OBJECT: &'static CStr = c"disk_data"; // 9 chars - OK
@@ -240,6 +241,11 @@ fn create_links(builder: &mut TopoBuilder) -> Result<()> {
     builder.add_link(PROCESSOR_LINK, PROCESSING_WKSP, 256, 2048, 4)?;
     println!("   >> ✓ link: pr_to_wr (depth: 256, mtu: 2048)");
 
+    for i in 0..5 {
+        builder.add_link(METRICS_LINK, METRICS_WKSP, 256, 512, 4)?;
+    }
+    println!("   >> ✓ link: metric_collect (depth: 256, mtu: 512)");
+
     println!("     >>> ✓ links created");
     Ok(())
 }
@@ -336,10 +342,29 @@ fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
     builder.add_tile_output(PROCESSOR_TILE, 0, PROCESSOR_LINK, 0)?;
     builder.add_tile_input(WRITER_TILE, 0, OUTPUT_WKSP, PROCESSOR_LINK, 0, true, true)?;
 
+    let metric_tiles = [
+        CPUMEM_TILE,
+        DISK_TILE,
+        NETWORK_TILE,
+        PROCESSOR_TILE,
+        WRITER_TILE,
+    ];
+    for (i, tile_name) in metric_tiles.iter().enumerate() {
+        builder.add_tile_output(tile_name, 0, c"metric", i)?;
+    }
+
+    builder.add_tile(c"metric", METRICS_WKSP, METRICS_WKSP, Some(5), false, false)?;
+    println!("   >> ✓ metric (cpuid=5)");
+
+    for i in 0..5 {
+        builder.add_tile_input(c"metric", 0, METRICS_WKSP, c"metric", i, false, true)?;
+    }
+
     println!("   >> ✓ cpumem -> processor");
     println!("   >> ✓ disk -> processor");
     println!("   >> ✓ network -> processor");
     println!("   >> ✓ processor -> writer");
+    println!("   >> ✓ all tiles -> metric");
 
     println!("     >>> ✓ topology wired");
     Ok(())
@@ -355,6 +380,18 @@ fn verify_layout(topo: &Topo) -> Result<()> {
         topo.tile_cnt(),
         topo.object_cnt()
     );
+
+    if let Some(collector_wksp_id) = topo.find_wksp(COLLECTOR_WKSP.to_str().unwrap()) {
+        println!("   >> ✓ wksp=collector id={}", collector_wksp_id);
+    }
+
+    if let Some(cpumem_tile_id) = topo.find_tile(CPUMEM_TILE.to_str().unwrap(), 0) {
+        println!("   >> ✓ tile=cpumem id={}", cpumem_tile_id);
+    }
+
+    if let Some(cpumem_link_id) = topo.find_link(CPUMEM_LINK.to_str().unwrap(), 0) {
+        println!("   >> ✓ link=cpumem id={}", cpumem_link_id);
+    }
 
     let max_tile_mlock = topo.max_tile_mlock();
     let total_mlock = topo.total_mlock();
@@ -523,6 +560,9 @@ fn create_tile_runners() -> Result<TileRunnerRegistry> {
     )?;
     registry.add_runner(
         TileRunner::new(WRITER_TILE, writer_tile_run).with_allowed_fds(populate_stdio_fds),
+    )?;
+    registry.add_runner(
+        TileRunner::new(METRICS_WKSP, metric_tile_run).with_allowed_fds(populate_stdio_fds),
     )?;
 
     Ok(registry)
@@ -817,6 +857,17 @@ unsafe extern "C" fn writer_tile_run(topo: *mut ActiveTopology, tile: *mut Activ
         } else {
             fd_debug!("    >> [writer-tile]: no metrics received");
         }
+    }
+}
+
+#[allow(unused_variables)]
+unsafe extern "C" fn metric_tile_run(topo: *mut ActiveTopology, tile: *mut ActiveTile) {
+    fd_notice!("> [metric-tile] {} starting", (*tile).id);
+
+    loop {
+        sleep(Duration::from_millis(2500));
+        fd_info!("    >> [metric-tile]: id={} collecting metrics", (*tile).id);
+        // TODO: Receive metrics from all tiles and aggregate/log them
     }
 }
 
