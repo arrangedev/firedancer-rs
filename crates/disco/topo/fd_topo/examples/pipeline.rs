@@ -15,26 +15,22 @@ use fd_topo::{
 
 const PROGNAME: &'static CStr = c"pipeline";
 
-// Workspace names (no specific limit, but keep reasonable)
 const COLLECTOR_WKSP: &'static CStr = c"collect";
 const METRICS_WKSP: &'static CStr = c"metric";
 const PROCESSING_WKSP: &'static CStr = c"proc";
 const OUTPUT_WKSP: &'static CStr = c"output";
 
-// Tile names (6 character limit)
 const CPUMEM_TILE: &'static CStr = c"cpumem"; // 6 chars - OK
 const DISK_TILE: &'static CStr = c"disk"; // 4 chars - OK
 const NETWORK_TILE: &'static CStr = c"net"; // 3 chars - OK
 const PROCESSOR_TILE: &'static CStr = c"proc"; // 4 chars - OK
 const WRITER_TILE: &'static CStr = c"writer"; // 6 chars - OK
 
-// Link names (no specific limit, but keep reasonable)
 const CPUMEM_LINK: &'static CStr = c"cm_to_pr";
 const DISK_LINK: &'static CStr = c"dk_to_pr";
 const NETWORK_LINK: &'static CStr = c"nt_to_pr";
 const PROCESSOR_LINK: &'static CStr = c"pr_to_wr";
 
-// Object names (12 character limit)
 const CPUMEM_OBJECT: &'static CStr = c"cpumem_data"; // 11 chars - OK
 const DISK_OBJECT: &'static CStr = c"disk_data"; // 9 chars - OK
 const NETWORK_OBJECT: &'static CStr = c"net_data"; // 8 chars - OK
@@ -162,6 +158,7 @@ fn main() -> Result<()> {
 
     let mut topo = if use_anonymous {
         println!("> [build] using anonymous wksps (mem-backed)");
+        check_meminfo();
 
         let page_size =
             std::env::var("FD_PAGE_SIZE")
@@ -444,6 +441,53 @@ fn exec(
     }
 
     Ok(())
+}
+
+fn check_meminfo() {
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(meminfo) = std::fs::read_to_string("/proc/meminfo") {
+            let mut available_kb = 0;
+            let mut hugepages_total = 0;
+            let mut hugepages_free = 0;
+
+            for line in meminfo.lines() {
+                if line.starts_with("MemAvailable:") {
+                    if let Some(value) = line.split_whitespace().nth(1) {
+                        available_kb = value.parse::<u64>().unwrap_or(0);
+                    }
+                } else if line.starts_with("HugePages_Total:") {
+                    if let Some(value) = line.split_whitespace().nth(1) {
+                        hugepages_total = value.parse::<u64>().unwrap_or(0);
+                    }
+                } else if line.starts_with("HugePages_Free:") {
+                    if let Some(value) = line.split_whitespace().nth(1) {
+                        hugepages_free = value.parse::<u64>().unwrap_or(0);
+                    }
+                }
+            }
+
+            println!("   >> system memory: {}MB available", available_kb / 1024);
+            if hugepages_total > 0 {
+                println!(
+                    "   >> huge pages: {}/{} free (2MB each)",
+                    hugepages_free, hugepages_total
+                );
+            } else {
+                println!("   >> huge pages: not configured (will use normal pages)");
+            }
+
+            if available_kb < 100 * 1024 {
+                // Less than 100MB
+                println!("   >> WARNING: Low available memory ({}MB). Consider freeing memory or reducing topology size.", available_kb / 1024);
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        println!("   >> memory check not available on this platform");
+    }
 }
 
 unsafe extern "C" fn populate_stdio_fds(
