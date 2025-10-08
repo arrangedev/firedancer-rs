@@ -350,14 +350,14 @@ fn wire_topology(builder: &mut TopoBuilder) -> Result<()> {
         WRITER_TILE,
     ];
     for (i, tile_name) in metric_tiles.iter().enumerate() {
-        builder.add_tile_output(tile_name, 0, c"metric", i)?;
+        builder.add_tile_output(tile_name, 0, METRICS_LINK, i)?;
     }
 
     builder.add_tile(c"metric", METRICS_WKSP, METRICS_WKSP, Some(5), false, false)?;
     println!("   >> ✓ metric (cpuid=5)");
 
     for i in 0..5 {
-        builder.add_tile_input(c"metric", 0, METRICS_WKSP, c"metric", i, false, true)?;
+        builder.add_tile_input(c"metric", 0, METRICS_WKSP, METRICS_LINK, i, false, true)?;
     }
 
     println!("   >> ✓ cpumem -> processor");
