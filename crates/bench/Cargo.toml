@@ -1,0 +1,49 @@
+[package]
+name = "firedancer-benchmarks"
+version.workspace = true
+edition.workspace = true
+
+[[bench]]
+name = "log"
+harness = false
+
+[[bench]]
+name = "ed25519"
+harness = false
+
+[[bench]]
+name = "toml_json_zstd"
+harness = false
+
+[[bench]]
+name = "bs58_bs64"
+harness = false
+
+[dependencies]
+fd_ed25519 = { path = "../ballet/ed25519/fd_ed25519" }
+fd_base64 = { path = "../ballet/base64/fd_base64" }
+fd_json = { path = "../ballet/json/fd_json" }
+fd_toml = { path = "../ballet/toml/fd_toml" }
+fd_zstd = { path = "../ballet/zstd/fd_zstd" }
+fd_log = { path = "../util/log/fd_log" }
+fd_math = { path = "../util/math/fd_math" }
+
+criterion = { version = "0.5", features = ["html_reports"] }
+serde = "1.0.228"
+ed25519-dalek = "2.1"
+solana-pubkey = "2.1"
+sha2 = "0.10"
+sha3 = "0.10"
+base64 = "0.22"
+serde_json = "1.0"
+toml = "0.8"
+zstd = "0.13"
+log = "0.4"
+tracing = "0.1"
+env_logger = "0.11"
+tracing-subscriber = "0.3"
+rand = "0.8"
+hex = "0.4"
+
+[dev-dependencies]
+tempfile = "3.8"
