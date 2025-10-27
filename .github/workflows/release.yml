@@ -128,7 +128,7 @@ jobs:
           tar -czf firedancer-rs-${{ matrix.artifact-name }}.tar.gz -C release-artifacts .
 
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: firedancer-rs-${{ matrix.artifact-name }}
           path: firedancer-rs-${{ matrix.artifact-name }}.tar.gz
