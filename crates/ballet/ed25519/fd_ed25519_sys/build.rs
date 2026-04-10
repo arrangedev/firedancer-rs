@@ -1,7 +1,7 @@
 use std::env;
 use std::path::PathBuf;
 
-use firedancer_rs_common::{TargetInfo, _pipeline_finalize};
+use firedancer_rs_common::{_pipeline_finalize, TargetInfo};
 
 fn main() {
     let target_info = TargetInfo::new();
@@ -187,6 +187,7 @@ fn init_bindgen(
         .clang_arg("-DFD_LOG_STYLE=0")
         .clang_arg("-std=c17")
         .clang_arg("-Wno-error=implicit-function-declaration")
+        .clang_arg("-Wno-incompatible-pointer-types")
         .wrap_unsafe_ops(true)
         .allowlist_function("fd_ed25519_.*")
         .allowlist_function("fd_x25519_.*")
@@ -251,7 +252,8 @@ fn init_cc(
         .flag("-std=c17")
         .flag("-O3")
         .flag("-fPIC")
-        .flag("-Wno-error=implicit-function-declaration");
+        .flag("-Wno-error=implicit-function-declaration")
+        .flag("-Wno-incompatible-pointer-types");
 
     if cfg!(feature = "base58") {
         build.file(base58_path.join("fd_base58.c"));
@@ -268,15 +270,15 @@ fn spec_target(
     _sha512_path: &PathBuf,
 ) {
     //if target_info.is_x86_64() {
-    //    cfg_x86_64(target_info, bindgen, build, ed25519_path, sha512_path);
+    // cfg_x86_64(target_info, bindgen, build, ed25519_path, sha512_path);
     //} else if target_info.is_aarch64() {
-    //    cfg_aarch64(bindgen, build);
+    // cfg_aarch64(bindgen, build);
     //} else {
     cfg_catchall(build, ed25519_path);
     //}
 
     //if target_info.is_macos() {
-    //    cfg_arm64_mac(bindgen, build);
+    // cfg_arm64_mac(bindgen, build);
     //}
 }
 
