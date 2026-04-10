@@ -78,14 +78,14 @@ fn bytes_are_curve_point(bytes: [u8; 32]) -> bool {
 pub struct Pubkey([u8; ED25519_PUBLIC_KEY_SIZE]);
 
 impl Pubkey {
-    pub fn from_bytes(bytes: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Result<Self, Ed25519Error> {
+    pub const fn from_bytes(bytes: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Result<Self, Ed25519Error> {
         Ok(unsafe { Self::from_bytes_unchecked(bytes) })
     }
 
     /// # Safety
     /// It's up to the caller to ensure the bytes represent a valid public key, and
     /// are properly aligned.
-    pub unsafe fn from_bytes_unchecked(bytes: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Self {
+    pub const unsafe fn from_bytes_unchecked(bytes: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Self {
         Self(*bytes)
     }
 
