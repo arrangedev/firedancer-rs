@@ -4,11 +4,15 @@ version.workspace = true
 edition.workspace = true
 
 [features]
-default = ["base58"]
+default = ["base58", "serde", "wincode"]
 base58 = ["fd_ed25519_sys/base58", "five8_const"]
+serde = ["dep:serde"]
+wincode = ["dep:wincode"]
 
 [dependencies]
 fd_ed25519_sys = { path = "../fd_ed25519_sys" }
 five8_const = { version = "1.0.0", optional = true }
+serde = { version = "1.0.228", features = ["derive"], optional = true }
+wincode = { version = "0.5.1", features = ["derive"], optional = true }
 
 [dev-dependencies]

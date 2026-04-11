@@ -78,18 +78,11 @@ fn bytes_are_curve_point(bytes: [u8; 32]) -> bool {
 pub struct Pubkey([u8; ED25519_PUBLIC_KEY_SIZE]);
 
 impl Pubkey {
-    pub const fn from_bytes(bytes: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Result<Self, Ed25519Error> {
-        Ok(unsafe { Self::from_bytes_unchecked(bytes) })
-    }
-
-    /// # Safety
-    /// It's up to the caller to ensure the bytes represent a valid public key, and
-    /// are properly aligned.
-    pub const unsafe fn from_bytes_unchecked(bytes: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Self {
+    pub const fn from_bytes(bytes: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Self {
         Self(*bytes)
     }
 
-    pub fn as_bytes(&self) -> &[u8; ED25519_PUBLIC_KEY_SIZE] {
+    pub const fn as_bytes(&self) -> &[u8; ED25519_PUBLIC_KEY_SIZE] {
         &self.0
     }
 
@@ -285,6 +278,12 @@ impl From<[u8; ED25519_PUBLIC_KEY_SIZE]> for Pubkey {
     }
 }
 
+impl From<&[u8; ED25519_PUBLIC_KEY_SIZE]> for Pubkey {
+    fn from(bytes: &[u8; ED25519_PUBLIC_KEY_SIZE]) -> Self {
+        Self(*bytes)
+    }
+}
+
 impl Default for Pubkey {
     fn default() -> Self {
         Self([0u8; ED25519_PUBLIC_KEY_SIZE])
@@ -300,15 +299,15 @@ impl fmt::Debug for Pubkey {
 }
 
 #[repr(transparent)]
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Signature([u8; ED25519_SIGNATURE_SIZE]);
 
 impl Signature {
-    pub fn from_bytes(bytes: &[u8; ED25519_SIGNATURE_SIZE]) -> Result<Self, Ed25519Error> {
-        Ok(Self(*bytes))
+    pub const fn from_bytes(bytes: &[u8; ED25519_SIGNATURE_SIZE]) -> Self {
+        Self(*bytes)
     }
 
-    pub fn as_bytes(&self) -> &[u8; ED25519_SIGNATURE_SIZE] {
+    pub const fn as_bytes(&self) -> &[u8; ED25519_SIGNATURE_SIZE] {
         &self.0
     }
 
@@ -358,6 +357,12 @@ impl AsRef<[u8; ED25519_SIGNATURE_SIZE]> for Signature {
 impl From<[u8; ED25519_SIGNATURE_SIZE]> for Signature {
     fn from(bytes: [u8; ED25519_SIGNATURE_SIZE]) -> Self {
         Self(bytes)
+    }
+}
+
+impl From<&[u8; ED25519_SIGNATURE_SIZE]> for Signature {
+    fn from(bytes: &[u8; ED25519_SIGNATURE_SIZE]) -> Self {
+        Self(*bytes)
     }
 }
 
@@ -844,11 +849,8 @@ mod tests {
     #[test]
     fn test_error_handling() {
         let message = b"test message";
-        let pubkeys = vec![Pubkey::from_bytes(&[1u8; 32]).unwrap()];
-        let signatures = vec![
-            Signature::from_bytes(&[0u8; 64]).unwrap(),
-            Signature::from_bytes(&[1u8; 64]).unwrap(),
-        ];
+        let pubkeys = vec![Pubkey::from([1u8; 32])];
+        let signatures = vec![Signature::from([0u8; 64]), Signature::from([1u8; 64])];
 
         let result = batch_verify_single_message(message, &pubkeys, &signatures);
         assert!(matches!(result, Err(Ed25519Error::InvalidInput(_))));
@@ -859,13 +861,13 @@ mod tests {
         let secret_key = [123u8; 32];
         let keypair = Keypair::from_secret_key(&secret_key).unwrap();
         let pubkey_bytes = keypair.pubkey().as_bytes();
-        let recovered_pubkey = Pubkey::from_bytes(pubkey_bytes).unwrap();
+        let recovered_pubkey = Pubkey::from(*pubkey_bytes);
         assert_eq!(keypair.pubkey(), &recovered_pubkey);
 
         let message = b"test message";
         let signature = keypair.sign(message).unwrap();
         let signature_bytes = signature.as_bytes();
-        let recovered_signature = Signature::from_bytes(signature_bytes).unwrap();
+        let recovered_signature = Signature::from(*signature_bytes);
         assert_eq!(signature, recovered_signature);
 
         assert!(recovered_pubkey
@@ -960,7 +962,7 @@ mod tests {
     #[test]
     fn test_encoding() {
         let pubkey_bytes = [1u8; 32];
-        let pubkey = Pubkey::from_bytes(&pubkey_bytes).unwrap();
+        let pubkey = Pubkey::from(pubkey_bytes);
 
         let base58_str = pubkey.to_base58();
         let hex_str = pubkey.to_hex();
