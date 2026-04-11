@@ -74,7 +74,9 @@ fn bytes_are_curve_point(bytes: [u8; 32]) -> bool {
 }
 
 #[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "wincode", derive(wincode::SchemaRead, wincode::SchemaWrite))]
 pub struct Pubkey([u8; ED25519_PUBLIC_KEY_SIZE]);
 
 impl Pubkey {
@@ -299,7 +301,8 @@ impl fmt::Debug for Pubkey {
 }
 
 #[repr(transparent)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "wincode", derive(wincode::SchemaRead, wincode::SchemaWrite))]
 pub struct Signature([u8; ED25519_SIGNATURE_SIZE]);
 
 impl Signature {
@@ -345,6 +348,27 @@ impl fmt::Debug for Signature {
             .field("bytes", &hex::encode(&self.0[..8]))
             .field("truncated", &"...")
             .finish()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for Signature {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_hex())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for Signature {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Self::from_hex(&s).map_err(serde::de::Error::custom)
     }
 }
 
