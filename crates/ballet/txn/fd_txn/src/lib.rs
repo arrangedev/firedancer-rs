@@ -55,6 +55,12 @@
 //! }
 //! ```
 
+pub mod builder;
+
+pub use builder::{
+    AccountMeta, BuildError, InstructionBuf, TransactionBuilder, UnsignedTransaction,
+};
+
 use core::fmt;
 use core::slice;
 use fd_ed25519::Pubkey;
@@ -117,7 +123,6 @@ impl TransactionVersion {
         }
     }
 
-    #[allow(dead_code)]
     pub fn to_raw(self) -> u8 {
         match self {
             TransactionVersion::Legacy => sys::FD_TXN_VLEGACY,
