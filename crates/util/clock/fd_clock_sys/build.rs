@@ -112,11 +112,7 @@ fn init_cc(
     build
 }
 
-fn spec_target(
-    target_info: &TargetInfo,
-    bindgen: &mut bindgen::Builder,
-    build: &mut cc::Build,
-) {
+fn spec_target(target_info: &TargetInfo, bindgen: &mut bindgen::Builder, build: &mut cc::Build) {
     if target_info.is_x86_64() {
         *bindgen = std::mem::take(bindgen)
             .clang_arg("-DFD_HAS_X86=1")
@@ -148,9 +144,15 @@ fn find_vendor() -> Result<(PathBuf, PathBuf), String> {
 
     loop {
         let vendor_path = current.join("vendor");
+
         let util_dir = vendor_path.join("util");
         if util_dir.exists() {
             return Ok((vendor_path, util_dir));
+        }
+
+        let src_util = vendor_path.join("src").join("util");
+        if src_util.exists() {
+            return Ok((vendor_path, src_util));
         }
 
         match current.parent() {

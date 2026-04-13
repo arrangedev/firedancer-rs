@@ -224,9 +224,15 @@ fn find_vendor() -> Result<(PathBuf, PathBuf), String> {
 
     loop {
         let vendor_path = current.join("vendor");
+
         let util_dir = vendor_path.join("util");
         if util_dir.exists() {
             return Ok((vendor_path, util_dir));
+        }
+
+        let src_util = vendor_path.join("src").join("util");
+        if src_util.exists() {
+            return Ok((vendor_path, src_util));
         }
 
         match current.parent() {
