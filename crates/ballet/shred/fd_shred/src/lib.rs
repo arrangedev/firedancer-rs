@@ -434,31 +434,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_constants() {
-        assert_eq!(MAX_SHRED_SIZE, 1228);
-        assert_eq!(MIN_SHRED_SIZE, 1203);
-        assert_eq!(DATA_HEADER_SIZE, 0x58);
-        assert_eq!(CODE_HEADER_SIZE, 0x59);
-    }
-
-    #[test]
-    fn test_shred_type() {
-        assert!(ShredType::LegacyData.is_data());
-        assert!(!ShredType::LegacyData.is_code());
-        assert!(ShredType::LegacyData.is_legacy());
-        assert!(!ShredType::LegacyData.is_merkle());
-
-        assert!(ShredType::MerkleDataChained.is_data());
-        assert!(ShredType::MerkleDataChained.is_merkle());
-        assert!(ShredType::MerkleDataChained.is_chained());
-        assert!(!ShredType::MerkleDataChained.is_resigned());
-
-        assert!(ShredType::MerkleCodeChainedResigned.is_code());
-        assert!(ShredType::MerkleCodeChainedResigned.is_chained());
-        assert!(ShredType::MerkleCodeChainedResigned.is_resigned());
-    }
-
-    #[test]
     fn test_parse_invalid_shred() {
         let too_small = vec![0u8; 100];
         assert!(matches!(

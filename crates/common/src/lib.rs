@@ -615,6 +615,33 @@ pub fn _gen_header_single_mod(
     Ok(wrapper_path)
 }
 
+pub fn fd_log_stub_path() -> PathBuf {
+    let common_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap_or_default());
+    if common_dir.join("fd_log_stub.c").exists() {
+        return common_dir.join("fd_log_stub.c");
+    }
+
+    let manifest_dir = PathBuf::from(
+        env::var("CARGO_MANIFEST_DIR").unwrap_or_default(),
+    );
+    let mut current = manifest_dir.as_path();
+    loop {
+        let candidate = current.join("crates").join("common").join("fd_log_stub.c");
+        if candidate.exists() {
+            return candidate;
+        }
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => break,
+        }
+    }
+
+    panic!(
+        "fd_log_stub.c not found. Searched from: {}",
+        manifest_dir.display()
+    );
+}
+
 pub fn _pipeline_finalize(
     cc: cc::Build,
     bindgen: bindgen::Builder,

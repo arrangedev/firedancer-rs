@@ -1,13 +1,63 @@
 use std::env;
 use std::path::PathBuf;
 
+use firedancer_rs_common::{_pipeline_finalize, fd_log_stub_path, TargetInfo};
+
 fn main() {
-    let firedancer_path = PathBuf::from("../../../../vendor");
-    let ballet_path = firedancer_path.join("ballet");
+    let target_info = TargetInfo::new();
+
+    let (vendor_path, ballet_path) =
+        find_vendor().expect("Failed to find vendor directory with submodules");
+
     let zstd_path = ballet_path.join("zstd");
-    let util_path = firedancer_path.join("util");
+    let util_path = vendor_path.join("util");
     let log_path = util_path.join("log");
 
+    let zstd_prefix = resolve_zstd_prefix(&target_info);
+
+    let stub_c_path = fd_log_stub_path();
+
+    setup_rerun(&zstd_path, &util_path, &log_path, &stub_c_path);
+
+    let wrapper_path = generate_header(&zstd_path);
+    let mut bindgen = init_bindgen(
+        &wrapper_path,
+        &ballet_path,
+        &util_path,
+        &vendor_path,
+        &zstd_prefix,
+    );
+    let mut build = init_cc(
+        &zstd_path,
+        &stub_c_path,
+        &ballet_path,
+        &util_path,
+        &vendor_path,
+        &zstd_prefix,
+    );
+
+    spec_target(&target_info, &mut bindgen, &mut build);
+
+    emit_link_directives(&target_info, &zstd_prefix);
+
+    _pipeline_finalize(build, bindgen, "fdzstd", None);
+}
+
+fn resolve_zstd_prefix(target_info: &TargetInfo) -> String {
+    env::var("ZSTD_PREFIX").unwrap_or_else(|_| {
+        if target_info.is_macos() {
+            "/opt/homebrew/opt/zstd".to_string()
+        } else {
+            "/usr".to_string()
+        }
+    })
+}
+
+fn setup_rerun(zstd_path: &PathBuf, util_path: &PathBuf, log_path: &PathBuf, stub_c_path: &PathBuf) {
+    println!(
+        "cargo:rerun-if-changed={}",
+        stub_c_path.display()
+    );
     println!(
         "cargo:rerun-if-changed={}",
         zstd_path.join("fd_zstd.h").display()
@@ -32,46 +82,38 @@ fn main() {
         "cargo:rerun-if-changed={}",
         log_path.join("fd_log.c").display()
     );
+}
 
-    let target = env::var("TARGET").unwrap();
-    let is_x86_64 = target.contains("x86_64");
-    let is_aarch64 = target.contains("aarch64") || target.contains("arm");
-    let is_macos = target.contains("apple");
-
+fn generate_header(zstd_path: &PathBuf) -> PathBuf {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     let wrapper_path = out_path.join("zstd_wrapper.h");
 
-    std::fs::write(
-        &wrapper_path,
-        format!(
-            r#"
+    let header_content = format!(
+        r#"
 #include "{}/fd_zstd.h"
 "#,
-            zstd_path.canonicalize().unwrap().display(),
-        ),
-    )
-    .expect("Failed to write wrapper header");
+        zstd_path.canonicalize().unwrap().display(),
+    );
 
-    let zstd_prefix = env::var("ZSTD_PREFIX").unwrap_or_else(|_| {
-        if cfg!(target_os = "macos") {
-            "/opt/homebrew/opt/zstd".to_string()
-        } else {
-            // For Linux, check common locations
-            if std::path::Path::new("/usr/lib/x86_64-linux-gnu/libzstd.so").exists() {
-                "/usr".to_string()
-            } else {
-                "/usr".to_string()
-            }
-        }
-    });
+    std::fs::write(&wrapper_path, header_content).expect("Failed to write wrapper header");
 
-    let mut bindgen = bindgen::Builder::default()
+    wrapper_path
+}
+
+fn init_bindgen(
+    wrapper_path: &PathBuf,
+    ballet_path: &PathBuf,
+    util_path: &PathBuf,
+    vendor_path: &PathBuf,
+    zstd_prefix: &str,
+) -> bindgen::Builder {
+    bindgen::Builder::default()
         .wrap_static_fns(true)
-        .wrap_static_fns_path(&wrapper_path)
+        .wrap_static_fns_path(wrapper_path)
         .header(wrapper_path.to_string_lossy())
         .clang_arg(format!("-I{}", ballet_path.display()))
         .clang_arg(format!("-I{}", util_path.display()))
-        .clang_arg(format!("-I{}", firedancer_path.display()))
+        .clang_arg(format!("-I{}", vendor_path.display()))
         .clang_arg(format!("-I{}/include", zstd_prefix))
         .clang_arg("-DFD_HAS_HOSTED=1")
         .clang_arg("-DFD_HAS_ZSTD=1")
@@ -84,101 +126,24 @@ fn main() {
         .allowlist_function("fd_zstd_.*")
         .allowlist_type("fd_zstd_.*")
         .allowlist_var("FD_ZSTD_.*")
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()));
-
-    // Check for emulated environment
-    let is_emulated = std::fs::read_to_string("/proc/cpuinfo")
-        .map(|cpuinfo| cpuinfo.contains("asimd") || cpuinfo.contains("neon"))
-        .unwrap_or(false);
-
-    if is_x86_64 {
-        if is_emulated {
-            bindgen = bindgen
-                .clang_arg("-DFD_HAS_X86=0")
-                .clang_arg("-DFD_HAS_SSE=0")
-                .clang_arg("-DFD_HAS_AVX=0");
-        } else {
-            bindgen = bindgen
-                .clang_arg("-DFD_HAS_X86=1")
-                .clang_arg("-DFD_HAS_SSE=1")
-                .clang_arg("-DFD_HAS_AVX=1");
-        }
-    } else if is_aarch64 {
-        bindgen = bindgen.clang_arg("-DFD_HAS_ARM=1");
-    }
-
-    if is_macos {
-        bindgen = bindgen.clang_arg("-DSIGPOLL=SIGIO");
-    }
-
-    let bindings = bindgen.generate().expect("Unable to generate bindings");
-
-    bindings
-        .write_to_file(out_path.join("bindings.rs"))
-        .expect("Couldn't write bindings!");
-
-    // Add library search paths and link the library
-    println!("cargo:rustc-link-search=native={}/lib", zstd_prefix);
-    if target.contains("linux") {
-        println!("cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu");
-        println!("cargo:rustc-link-search=native=/usr/lib");
-        println!("cargo:rustc-link-search=native=/lib/x86_64-linux-gnu");
-    }
-    println!("cargo:rustc-link-lib=dylib=zstd");
-
-    let stub_c_path = out_path.join("fd_log_stub.c");
-    std::fs::write(
-        &stub_c_path,
-        r#"
-#define _GNU_SOURCE
-#include <stdio.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <time.h>
-
-char const *
-fd_log_private_0( char const * fmt, ... ) {
-  static char buf[1024];
-  va_list ap;
-  va_start(ap, fmt);
-  vsnprintf(buf, sizeof(buf), fmt, ap);
-  va_end(ap);
-  return buf;
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
 }
 
-void
-fd_log_private_1( int level, long now, char const * file, int line, char const * func, char const * msg ) {
-  (void)now;
-  if (level >= 3) {
-    fprintf(stderr, "[%s:%d] %s: %s\n", file, line, func, msg);
-  }
-}
-
-void
-fd_log_private_2( int level, long now, char const * file, int line, char const * func, char const * msg ) {
-  (void)level;
-  (void)now;
-  fprintf(stderr, "FATAL [%s:%d] %s: %s\n", file, line, func, msg);
-  abort();
-}
-
-long
-fd_log_wallclock( void ) {
-  struct timespec ts;
-  clock_gettime(CLOCK_REALTIME, &ts);
-  return ((long)1e9)*((long)ts.tv_sec) + (long)ts.tv_nsec;
-}
-"#,
-    )
-    .expect("Failed to write stub C file");
-
+fn init_cc(
+    zstd_path: &PathBuf,
+    stub_c_path: &PathBuf,
+    ballet_path: &PathBuf,
+    util_path: &PathBuf,
+    vendor_path: &PathBuf,
+    zstd_prefix: &str,
+) -> cc::Build {
     let mut build = cc::Build::new();
     build
         .file(zstd_path.join("fd_zstd.c"))
-        .file(&stub_c_path)
-        .include(&ballet_path)
-        .include(&util_path)
-        .include(&firedancer_path)
+        .file(stub_c_path)
+        .include(ballet_path)
+        .include(util_path)
+        .include(vendor_path)
         .include(format!("{}/include", zstd_prefix))
         .define("FD_HAS_HOSTED", "1")
         .define("FD_HAS_ZSTD", "1")
@@ -190,32 +155,89 @@ fd_log_wallclock( void ) {
         .flag("-Wno-error=implicit-function-declaration")
         .flag(&format!("-L{}/lib", zstd_prefix));
 
-    if target.contains("linux") {
-        build
-            .flag("-L/usr/lib/x86_64-linux-gnu")
-            .flag("-L/usr/lib")
-            .flag("-lzstd");
-    }
+    build
+}
 
-    if is_x86_64 {
-        if is_emulated {
+fn spec_target(
+    target_info: &TargetInfo,
+    bindgen: &mut bindgen::Builder,
+    build: &mut cc::Build,
+) {
+    if target_info.is_x86_64() {
+        if target_info.emulated {
+            *bindgen = std::mem::take(bindgen)
+                .clang_arg("-DFD_HAS_X86=0")
+                .clang_arg("-DFD_HAS_SSE=0")
+                .clang_arg("-DFD_HAS_AVX=0");
+
             build
                 .define("FD_HAS_X86", "0")
                 .define("FD_HAS_SSE", "0")
                 .define("FD_HAS_AVX", "0");
         } else {
+            *bindgen = std::mem::take(bindgen)
+                .clang_arg("-DFD_HAS_X86=1")
+                .clang_arg("-DFD_HAS_SSE=1")
+                .clang_arg("-DFD_HAS_AVX=1");
+
             build
                 .define("FD_HAS_X86", "1")
                 .define("FD_HAS_SSE", "1")
                 .define("FD_HAS_AVX", "1");
         }
-    } else if is_aarch64 {
+    } else if target_info.is_aarch64() {
+        *bindgen = std::mem::take(bindgen).clang_arg("-DFD_HAS_ARM=1");
         build.define("FD_HAS_ARM", "1");
     }
 
-    if is_macos {
+    if target_info.is_macos() {
+        *bindgen = std::mem::take(bindgen).clang_arg("-DSIGPOLL=SIGIO");
         build.define("SIGPOLL", "SIGIO");
     }
+}
 
-    build.compile("fdzstd");
+fn emit_link_directives(target_info: &TargetInfo, zstd_prefix: &str) {
+    println!("cargo:rustc-link-search=native={}/lib", zstd_prefix);
+
+    if target_info.is_linux() {
+        println!("cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu");
+        println!("cargo:rustc-link-search=native=/usr/lib");
+        println!("cargo:rustc-link-search=native=/lib/x86_64-linux-gnu");
+    }
+
+    println!("cargo:rustc-link-lib=dylib=zstd");
+}
+
+fn find_vendor() -> Result<(PathBuf, PathBuf), String> {
+    let manifest_dir = PathBuf::from(
+        env::var("CARGO_MANIFEST_DIR")
+            .map_err(|e| format!("Failed to get CARGO_MANIFEST_DIR: {}", e))?,
+    );
+
+    let mut current = manifest_dir.as_path();
+
+    loop {
+        let vendor_path = current.join("vendor");
+        let ballet_dir = vendor_path.join("ballet");
+        if ballet_dir.exists() {
+            eprintln!("Found ballet at: {}", ballet_dir.display());
+            return Ok((vendor_path, ballet_dir));
+        }
+
+        let src_ballet = vendor_path.join("src").join("ballet");
+        if src_ballet.exists() {
+            eprintln!("Found ballet at: {}", src_ballet.display());
+            return Ok((vendor_path, src_ballet));
+        }
+
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => break,
+        }
+    }
+
+    Err(format!(
+        "Failed to find vendor directory with ballet subdirectory. Started search from: {}",
+        manifest_dir.display()
+    ))
 }

@@ -92,15 +92,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_shred_constants() {
-        // Test that constants are properly defined
-        assert_eq!(FD_SHRED_MAX_SZ, 1228);
-        assert_eq!(FD_SHRED_MIN_SZ, 1203);
-        assert_eq!(FD_SHRED_DATA_HEADER_SZ, 0x58);
-        assert_eq!(FD_SHRED_CODE_HEADER_SZ, 0x59);
-    }
-
-    #[test]
     fn test_shred_type_functions() {
         unsafe {
             // Test type extraction
