@@ -172,6 +172,9 @@ pub struct ClockShmem {
     backing: ShmemBacking,
 }
 
+unsafe impl Send for ClockShmem {}
+unsafe impl Sync for ClockShmem {}
+
 fn validate_shm_name(name: &str) -> Result<[u8; 256], ClockError> {
     if name.is_empty() || name.len() >= 255 {
         return Err(ClockError::InvalidParams("shm name too long or empty"));
@@ -414,11 +417,19 @@ impl Drop for ClockShmem {
 /// Borrows the parent [`ClockShmem`] to ensure the shared memory region
 /// outlives all joins. The join itself allocates a small process-local
 /// `fd_clock_t` to hold the pointer + clock function.
+///
+/// Thread safety: observer methods (`now`, accessors) take `&self` and
+/// are safe to call from any number of threads concurrently. Calibrator
+/// methods (`recal`, `step`) take `&mut self`, enforcing single-writer
+/// at the Rust level. This matches the C API's concurrency model.
 pub struct ClockJoin<'a> {
     lmem: NonNull<u8>,
     layout: Layout,
     _shmem: &'a ClockShmem,
 }
+
+unsafe impl Send for ClockJoin<'_> {}
+unsafe impl Sync for ClockJoin<'_> {}
 
 impl<'a> ClockJoin<'a> {
     fn new(
@@ -551,9 +562,16 @@ impl<'a> Drop for ClockJoin<'a> {
 /// housekeeping (much more often than recal_avg), then call
 /// [`estimate_y`](ClockEpoch::estimate_y) with an x-clock observation
 /// on the critical path.
+///
+/// `ClockEpoch` is `Send` but intentionally **not** `Sync`. It is a
+/// per-thread cache with no internal synchronization. In multi-threaded
+/// observers, each thread should create its own `ClockEpoch` from the
+/// shared `shclock_ptr()`.
 pub struct ClockEpoch {
     inner: sys::fd_clock_epoch_private,
 }
+
+unsafe impl Send for ClockEpoch {}
 
 impl ClockEpoch {
     /// Initializes the epoch from the clock's current published epoch.
@@ -872,5 +890,88 @@ mod tests {
         let now2 = j2.now();
         assert!(now1 >= 1_000_000);
         assert!(now2 >= 1_000_000);
+    }
+
+    #[test]
+    fn test_sync_send_bounds() {
+        fn assert_send<T: Send>() {}
+        fn assert_sync<T: Sync>() {}
+
+        assert_send::<ClockShmem>();
+        assert_sync::<ClockShmem>();
+        assert_send::<ClockJoin<'_>>();
+        assert_sync::<ClockJoin<'_>>();
+        assert_send::<ClockEpoch>();
+    }
+
+    #[test]
+    fn test_shared_join_across_threads() {
+        MOCK_TICK.store(1_000_000, Ordering::Relaxed);
+
+        let config = ClockConfig::new(10_000_000);
+        let name = "/fd_clock_test_threads\0";
+
+        let shmem = ClockShmem::init(name, &config, 1_000_000, 1_000_000, 100.0).unwrap();
+        let join = shmem.join(Some(mock_clock_x), core::ptr::null()).unwrap();
+
+        let join_ref = &join;
+
+        std::thread::scope(|s| {
+            let handles: Vec<_> = (0..4)
+                .map(|_| {
+                    s.spawn(|| {
+                        let mut prev = 0i64;
+                        for _ in 0..1000 {
+                            let now = join_ref.now();
+                            assert!(now >= prev);
+                            prev = now;
+                        }
+                        prev
+                    })
+                })
+                .collect();
+
+            for h in handles {
+                let last = h.join().unwrap();
+                assert!(last >= 1_000_000);
+            }
+        });
+    }
+
+    #[test]
+    fn test_epoch_per_thread() {
+        MOCK_TICK.store(1_000_000, Ordering::Relaxed);
+
+        let config = ClockConfig::new(10_000_000);
+        let name = "/fd_clock_test_epoch_mt\0";
+
+        let shmem = ClockShmem::init(name, &config, 1_000_000, 1_000_000, 100.0).unwrap();
+        let join = shmem.join(Some(mock_clock_x), core::ptr::null()).unwrap();
+
+        let join_ref = &join;
+
+        std::thread::scope(|s| {
+            let handles: Vec<_> = (0..4)
+                .map(|_| {
+                    s.spawn(|| {
+                        let ptr = join_ref.shclock_ptr();
+                        let mut epoch = unsafe { ClockEpoch::init(ptr) };
+
+                        for i in 0..1000 {
+                            let x = MOCK_TICK.fetch_add(100, Ordering::Relaxed);
+                            let _y = epoch.estimate_y(x);
+
+                            if i % 250 == 0 {
+                                unsafe { epoch.refresh(ptr) };
+                            }
+                        }
+                    })
+                })
+                .collect();
+
+            for h in handles {
+                h.join().unwrap();
+            }
+        });
     }
 }
