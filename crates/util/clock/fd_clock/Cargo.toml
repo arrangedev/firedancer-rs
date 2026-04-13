@@ -1,10 +1,11 @@
 [package]
-name = "fd_tmpl"
+name = "fd_clock"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
-fd_tmpl_sys = { path = "../fd_tmpl_sys" }
+fd_clock_sys = { path = "../fd_clock_sys" }
+libc = "0.2"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -12,3 +13,6 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [[bench]]
 name = "benchmarks"
 harness = false
+
+[[example]]
+name = "usage"

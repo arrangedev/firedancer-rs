@@ -1,15 +1,13 @@
 [package]
-name = "fd_toml_sys"
+name = "fd_clock_sys"
 version.workspace = true
 edition.workspace = true
 build = "build.rs"
-links = "fdtoml"
+links = "fdclock"
 
 [dependencies]
 
 [build-dependencies]
-bindgen = { version = "0.72.1" }
+bindgen = "0.72.1"
 cc = "1.0"
 firedancer-rs-common = { path = "../../../common" }
-
-[dev-dependencies]
