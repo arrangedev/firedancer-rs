@@ -80,10 +80,18 @@ fn find_vendor() -> Result<(PathBuf, PathBuf), String> {
 
     loop {
         let vendor_path = current.join("vendor");
+
         let waltz_dir = vendor_path.join("waltz");
         if waltz_dir.exists() && vendor_path.join("util").exists() {
             eprintln!("Found waltz at: {}", waltz_dir.display());
             return Ok((vendor_path, waltz_dir));
+        }
+
+        let src_path = vendor_path.join("src");
+        let src_waltz = src_path.join("waltz");
+        if src_waltz.exists() && src_path.join("util").exists() {
+            eprintln!("Found waltz at: {}", src_waltz.display());
+            return Ok((src_path, src_waltz));
         }
 
         match current.parent() {
