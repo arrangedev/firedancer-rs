@@ -133,20 +133,53 @@ impl Pubkey {
         seeds: &[&[u8]],
         program_id: &Pubkey,
     ) -> Result<(Pubkey, u8), Ed25519Error> {
-        let mut bump_seed = [u8::MAX];
-        for _ in 0..u8::MAX {
-            {
-                let mut seeds_with_bump = seeds.to_vec();
-                seeds_with_bump.push(&bump_seed);
-                match Self::create_program_address(&seeds_with_bump, program_id) {
-                    Ok(address) => return Ok((address, bump_seed[0])),
-                    Err(Ed25519Error::InvalidInput(_)) => (),
-                    Err(e) => return Err(e),
-                }
-            }
-            bump_seed[0] -= 1;
+        if seeds.len() > MAX_SEEDS {
+            return Err(Ed25519Error::MaxSeedLengthExceeded);
         }
-        Err(Ed25519Error::DerivationFailed)
+        for seed in seeds.iter() {
+            if seed.len() > MAX_SEED_LEN {
+                return Err(Ed25519Error::MaxSeedLengthExceeded);
+            }
+        }
+
+        unsafe {
+            let mut base_sha = MaybeUninit::<sys::fd_sha256_t>::uninit();
+            sys::fd_sha256_init(base_sha.as_mut_ptr());
+            let base_sha = base_sha.assume_init();
+
+            let base_sha = seeds.iter().fold(base_sha, |mut sha, seed| {
+                sys::fd_sha256_append(&mut sha, seed.as_ptr() as *const c_void, seed.len() as u64);
+                sha
+            });
+
+            let mut bump = u8::MAX;
+            for _ in 0..u8::MAX {
+                let mut sha = core::ptr::read(&base_sha);
+
+                sys::fd_sha256_append(&mut sha, &bump as *const u8 as *const c_void, 1);
+                sys::fd_sha256_append(
+                    &mut sha,
+                    program_id.as_ref().as_ptr() as *const c_void,
+                    ED25519_PUBLIC_KEY_SIZE as u64,
+                );
+                sys::fd_sha256_append(
+                    &mut sha,
+                    PDA_MARKER.as_ptr() as *const c_void,
+                    PDA_MARKER.len() as u64,
+                );
+
+                let mut hash = [0u8; 32];
+                sys::fd_sha256_fini(&mut sha, hash.as_mut_ptr() as *mut c_void);
+
+                if sys::fd_ed25519_point_is_on_curve(hash.as_ptr()) == 0 {
+                    return Ok((Pubkey::from(hash), bump));
+                }
+
+                bump -= 1;
+            }
+
+            Err(Ed25519Error::DerivationFailed)
+        }
     }
 
     /// Create a program address with the given seeds and program ID. This is faster
@@ -201,40 +234,38 @@ impl Pubkey {
 
     /// `create_program_address` with no checks on seed length bounds. Exceeeding
     /// these bounds may result in an invalid address or undefined behavior
-    pub fn create_program_address_unchecked(
+    pub unsafe fn create_program_address_unchecked(
         seeds: &[&[u8]],
         program_id: &Pubkey,
     ) -> Result<Pubkey, Ed25519Error> {
-        unsafe {
-            let mut sha = MaybeUninit::<sys::fd_sha256_t>::uninit();
-            sys::fd_sha256_init(sha.as_mut_ptr());
-            let mut sha = sha.assume_init();
+        let mut sha = MaybeUninit::<sys::fd_sha256_t>::uninit();
+        sys::fd_sha256_init(sha.as_mut_ptr());
+        let mut sha = sha.assume_init();
 
-            for seed in seeds.iter() {
-                sys::fd_sha256_append(&mut sha, seed.as_ptr() as *const c_void, seed.len() as u64);
-            }
-
-            sys::fd_sha256_append(
-                &mut sha,
-                program_id.as_ref().as_ptr() as *const c_void,
-                program_id.as_ref().len() as u64,
-            );
-
-            sys::fd_sha256_append(
-                &mut sha,
-                PDA_MARKER.as_ptr() as *const c_void,
-                PDA_MARKER.len() as u64,
-            );
-
-            let mut hash = [0u8; 32];
-            sys::fd_sha256_fini(&mut sha, hash.as_mut_ptr() as *mut c_void);
-
-            if bytes_are_curve_point(hash) {
-                return Err(Ed25519Error::InvalidInput("Provided seeds are invalid"));
-            }
-
-            Ok(Pubkey::from(hash))
+        for seed in seeds.iter() {
+            sys::fd_sha256_append(&mut sha, seed.as_ptr() as *const c_void, seed.len() as u64);
         }
+
+        sys::fd_sha256_append(
+            &mut sha,
+            program_id.as_ref().as_ptr() as *const c_void,
+            program_id.as_ref().len() as u64,
+        );
+
+        sys::fd_sha256_append(
+            &mut sha,
+            PDA_MARKER.as_ptr() as *const c_void,
+            PDA_MARKER.len() as u64,
+        );
+
+        let mut hash = [0u8; 32];
+        sys::fd_sha256_fini(&mut sha, hash.as_mut_ptr() as *mut c_void);
+
+        if bytes_are_curve_point(hash) {
+            return Err(Ed25519Error::InvalidInput("Provided seeds are invalid"));
+        }
+
+        Ok(Pubkey::from(hash))
     }
 
     pub fn verify(&self, message: &[u8], signature: &Signature) -> Result<bool, Ed25519Error> {

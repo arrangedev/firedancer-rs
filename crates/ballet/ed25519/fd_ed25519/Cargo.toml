@@ -16,3 +16,9 @@ serde = { version = "1.0.228", features = ["derive"], optional = true }
 wincode = { version = "0.5.1", features = ["derive"], optional = true }
 
 [dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+solana-address = { version = "2.6.0", features = ["curve25519"] }
+
+[[bench]]
+name = "pda"
+harness = false

@@ -9,6 +9,9 @@ fn main() {
     let (vendor_path, ballet_path) =
         find_vendor().expect("Failed to find vendor directory with submodules");
 
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let csrc_path = manifest_dir.join("csrc");
+
     let ed25519_path = ballet_path.join("ed25519");
     let sha512_path = ballet_path.join("sha512");
     let sha256_path = ballet_path.join("sha256");
@@ -23,9 +26,10 @@ fn main() {
         &base58_path,
         &hex_path,
         &util_path,
+        &csrc_path,
     );
 
-    let wrapper_path = generate_header(&ed25519_path, &base58_path, &hex_path);
+    let wrapper_path = generate_header(&ed25519_path, &base58_path, &hex_path, &csrc_path);
     let mut bindgen = init_bindgen(&wrapper_path, &ballet_path, &util_path, &vendor_path);
     let mut build = init_cc(
         &ed25519_path,
@@ -36,6 +40,7 @@ fn main() {
         &ballet_path,
         &util_path,
         &vendor_path,
+        &csrc_path,
     );
 
     spec_target(
@@ -56,6 +61,7 @@ fn setup_rerun(
     base58_path: &PathBuf,
     hex_path: &PathBuf,
     util_path: &PathBuf,
+    csrc_path: &PathBuf,
 ) {
     println!(
         "cargo:rerun-if-changed={}",
@@ -132,9 +138,23 @@ fn setup_rerun(
             base58_path.join("fd_base58.c").display()
         );
     }
+
+    println!(
+        "cargo:rerun-if-changed={}",
+        csrc_path.join("fd_ed25519_pda.h").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        csrc_path.join("fd_ed25519_pda.c").display()
+    );
 }
 
-fn generate_header(ed25519_path: &PathBuf, base58_path: &PathBuf, hex_path: &PathBuf) -> PathBuf {
+fn generate_header(
+    ed25519_path: &PathBuf,
+    base58_path: &PathBuf,
+    hex_path: &PathBuf,
+    csrc_path: &PathBuf,
+) -> PathBuf {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     let wrapper_path = out_path.join("ed25519_wrapper.h");
     let sha256_path = ed25519_path.parent().unwrap().join("sha256");
@@ -148,6 +168,7 @@ fn generate_header(ed25519_path: &PathBuf, base58_path: &PathBuf, hex_path: &Pat
 #include "{}/fd_x25519.h"
 #include "{}/fd_sha256.h"
 #include "{}/fd_hex.h"
+#include "{}/fd_ed25519_pda.h"
 "#,
         ed25519_path.canonicalize().unwrap().display(),
         ed25519_path.canonicalize().unwrap().display(),
@@ -155,7 +176,8 @@ fn generate_header(ed25519_path: &PathBuf, base58_path: &PathBuf, hex_path: &Pat
         ed25519_path.canonicalize().unwrap().display(),
         ed25519_path.canonicalize().unwrap().display(),
         sha256_path.canonicalize().unwrap().display(),
-        hex_path.canonicalize().unwrap().display()
+        hex_path.canonicalize().unwrap().display(),
+        csrc_path.canonicalize().unwrap().display(),
     );
 
     if cfg!(feature = "base58") {
@@ -230,6 +252,7 @@ fn init_cc(
     ballet_path: &PathBuf,
     util_path: &PathBuf,
     vendor_path: &PathBuf,
+    csrc_path: &PathBuf,
 ) -> cc::Build {
     let mut build = cc::Build::new();
     build
@@ -244,6 +267,7 @@ fn init_cc(
         .file(sha512_path.join("fd_sha512.c"))
         .file(sha256_path.join("fd_sha256.c"))
         .file(hex_path.join("fd_hex.c"))
+        .file(csrc_path.join("fd_ed25519_pda.c"))
         .include(ballet_path)
         .include(util_path)
         .include(vendor_path)
