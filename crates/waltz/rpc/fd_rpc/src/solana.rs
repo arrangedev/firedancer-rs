@@ -8,8 +8,7 @@ use crate::json_scan::JsonScan;
 use crate::jsonrpc;
 use crate::utils::{self, BufWriter};
 
-pub const DEFAULT_RPC_URL: &str =
-    "https://mainnet.helius-rpc.com/?api-key=5b64653d-aa17-48ed-b07e-047461bc02b0";
+pub const DEFAULT_RPC_URL: &str = "https://api.mainnet-beta.solana.com";
 
 const REQUEST_BUF_SZ: usize = 4096;
 const BATCH_REQUEST_BUF_SZ: usize = 8192;
@@ -239,6 +238,42 @@ impl BatchEntry {
         let len = fmt_account_info_params(&mut params, &pubkey_b58, commitment);
         Self {
             method: "getAccountInfo",
+            params,
+            params_len: len,
+        }
+    }
+
+    #[inline]
+    pub fn get_multiple_accounts(pubkeys: &[Pubkey], commitment: Commitment) -> Self {
+        let pubkeys_b58 = pubkeys.iter().map(|p| p.to_base58()).collect::<Vec<_>>();
+        let mut params = [0u8; 256];
+        let len = fmt_multiple_accounts_params(&mut params, &pubkeys_b58, commitment);
+        Self {
+            method: "getMultipleAccounts",
+            params,
+            params_len: len,
+        }
+    }
+
+    #[inline]
+    pub fn get_program_accounts(program_id: Pubkey, commitment: Commitment) -> Self {
+        let pubkey_b58 = program_id.to_base58();
+        let mut params = [0u8; 256];
+        let len = fmt_account_info_params(&mut params, &pubkey_b58, commitment);
+        Self {
+            method: "getProgramAccounts",
+            params,
+            params_len: len,
+        }
+    }
+
+    #[inline]
+    pub fn get_token_account_balance(pubkey: &[u8; 32], commitment: Commitment) -> Self {
+        let pubkey_b58 = fd_ed25519::base58::encode_32(pubkey);
+        let mut params = [0u8; 256];
+        let len = fmt_pubkey_commitment_params(&mut params, &pubkey_b58, commitment);
+        Self {
+            method: "getTokenAccountBalance",
             params,
             params_len: len,
         }

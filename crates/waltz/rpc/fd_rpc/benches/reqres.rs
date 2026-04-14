@@ -1,6 +1,11 @@
+use std::str::FromStr;
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use fd_ed25519::{pubkey, Pubkey};
-use fd_rpc::{Commitment, JsonRpcResponse, SolanaRpcClient, DEFAULT_RPC_URL};
+use fd_rpc::{BatchEntry, Commitment, JsonRpcResponse, SolanaRpcClient, DEFAULT_RPC_URL};
+use solana_client::rpc_client::RpcClient;
+use solana_commitment_config::CommitmentConfig;
+use solana_pubkey::Pubkey as SolanaPubkey;
 
 fn rpc_url() -> String {
     std::env::var("RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.to_string())
@@ -184,10 +189,116 @@ fn rpc_roundtrip_benches(c: &mut Criterion) {
     g.finish();
 }
 
+fn batch_roundtrip_benches(c: &mut Criterion) {
+    let mut client = match try_connect() {
+        Some(c) => c,
+        None => return,
+    };
+
+    let mut g = c.benchmark_group("batch_roundtrip");
+    g.sample_size(20);
+    g.measurement_time(std::time::Duration::from_secs(15));
+
+    let system_program = [0u8; 32];
+    let multiple_keys: [Pubkey; 2] = [
+        pubkey!("Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE"),
+        pubkey!("BWBHrYqfcjAh5dSiRwzPnY4656cApXVXmkeDmAfwBKQG"),
+    ];
+
+    let entries = [
+        BatchEntry::get_slot(Commitment::Confirmed),
+        BatchEntry::get_latest_blockhash(Commitment::Confirmed),
+        BatchEntry::get_transaction_count(Commitment::Confirmed),
+        BatchEntry::get_balance(&system_program, Commitment::Confirmed),
+        BatchEntry::get_multiple_accounts(&multiple_keys, Commitment::Confirmed),
+    ];
+
+    g.bench_function("5_calls", |b| {
+        b.iter(|| {
+            black_box(client.batch(black_box(&entries)).unwrap());
+        });
+    });
+
+    g.finish();
+}
+
+fn solana_client_roundtrip_benches(c: &mut Criterion) {
+    let url = rpc_url();
+    let client = RpcClient::new_with_commitment(url, CommitmentConfig::confirmed());
+
+    if client.get_slot().is_err() {
+        eprintln!("SKIP solana_client benchmarks: cannot connect to RPC");
+        return;
+    }
+
+    let mut g = c.benchmark_group("solana_client_roundtrip");
+    g.sample_size(20);
+    g.measurement_time(std::time::Duration::from_secs(15));
+
+    g.bench_function("getSlot", |b| {
+        b.iter(|| {
+            black_box(client.get_slot().unwrap());
+        });
+    });
+
+    g.bench_function("getBlockHeight", |b| {
+        b.iter(|| {
+            black_box(client.get_block_height().unwrap());
+        });
+    });
+
+    g.bench_function("getLatestBlockhash", |b| {
+        b.iter(|| {
+            black_box(client.get_latest_blockhash().unwrap());
+        });
+    });
+
+    g.bench_function("getTransactionCount", |b| {
+        b.iter(|| {
+            black_box(client.get_transaction_count().unwrap());
+        });
+    });
+
+    g.bench_function("getBalance", |b| {
+        let system_program = SolanaPubkey::default();
+        b.iter(|| {
+            black_box(client.get_balance(&system_program).unwrap());
+        });
+    });
+
+    g.bench_function("getVersion", |b| {
+        b.iter(|| {
+            black_box(client.get_version().unwrap());
+        });
+    });
+
+    g.bench_function("getAccountInfo", |b| {
+        let account =
+            SolanaPubkey::from_str("Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE").unwrap();
+        b.iter(|| {
+            black_box(client.get_account(&account).unwrap());
+        });
+    });
+
+    g.bench_function("getMultipleAccounts", |b| {
+        let keys = [
+            SolanaPubkey::from_str("Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE").unwrap(),
+            SolanaPubkey::from_str("BWBHrYqfcjAh5dSiRwzPnY4656cApXVXmkeDmAfwBKQG").unwrap(),
+        ];
+        b.iter(|| {
+            black_box(client.get_multiple_accounts(&keys).unwrap());
+        });
+    });
+
+    g.finish();
+}
+
 criterion_group!(
     benches,
     serialization_benches,
     parse_benches,
     rpc_roundtrip_benches,
+    batch_roundtrip_benches,
+    solana_client_roundtrip_benches,
 );
 criterion_main!(benches);

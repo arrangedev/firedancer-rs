@@ -12,12 +12,18 @@ libc = "0.2"
 [[example]]
 name = "run"
 
+[[example]]
+name = "batch"
+
 [[bench]]
 name = "reqres"
 harness = false
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+solana-client = "3.1.12"
+solana-commitment-config = "3.1"
+solana-pubkey = "3"
 
 [features]
 default = []
