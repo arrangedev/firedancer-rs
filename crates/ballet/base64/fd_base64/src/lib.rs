@@ -52,8 +52,8 @@ pub enum Base64Error {
     InvalidInput,
 }
 
-impl std::fmt::Display for Base64Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Base64Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Base64Error::InvalidCharacter => write!(f, "Invalid Base64 character"),
             Base64Error::InvalidLength => write!(f, "Invalid Base64 length"),
@@ -64,7 +64,7 @@ impl std::fmt::Display for Base64Error {
     }
 }
 
-impl std::error::Error for Base64Error {}
+impl core::error::Error for Base64Error {}
 
 /// Calculate the encoded size for a given input length
 /// returning the exact number of characters needed to encode `input_len` bytes (includes padding)
@@ -400,7 +400,7 @@ mod tests {
                 encoded,
                 expected,
                 "Encoding failed for: {:?}",
-                std::str::from_utf8(input)
+                core::str::from_utf8(input)
             );
 
             let decoded = decode(&encoded).unwrap();
@@ -408,7 +408,7 @@ mod tests {
                 decoded,
                 input,
                 "Decoding failed for: {:?}",
-                std::str::from_utf8(input)
+                core::str::from_utf8(input)
             );
         }
     }
@@ -448,7 +448,7 @@ mod tests {
             assert!(
                 result.is_err(),
                 "Should fail for: {:?}",
-                std::str::from_utf8(input)
+                core::str::from_utf8(input)
             );
 
             let error = result.unwrap_err();
@@ -456,7 +456,7 @@ mod tests {
                 error,
                 *expected_error,
                 "Wrong error type for: {:?}",
-                std::str::from_utf8(input)
+                core::str::from_utf8(input)
             );
         }
     }

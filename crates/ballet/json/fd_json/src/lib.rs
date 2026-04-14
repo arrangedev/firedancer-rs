@@ -60,10 +60,10 @@
 //! let json_string = fd_json::to_string(&json_value).unwrap();
 //! ```
 
+use core::fmt;
 use fd_json_sys as sys;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum JsonError {
@@ -94,7 +94,7 @@ impl fmt::Display for JsonError {
     }
 }
 
-impl std::error::Error for JsonError {}
+impl core::error::Error for JsonError {}
 
 pub type JsonObject = HashMap<String, JsonValue>;
 pub type JsonArray = Vec<JsonValue>;

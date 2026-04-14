@@ -293,6 +293,12 @@ impl Default for Pubkey {
 }
 
 impl fmt::Debug for Pubkey {
+    #[cfg(feature = "base58")]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.to_base58())
+    }
+
+    #[cfg(not(feature = "base58"))]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Pubkey")
             .field("bytes", &hex::encode(&self.0))
@@ -343,6 +349,12 @@ impl Signature {
 }
 
 impl fmt::Debug for Signature {
+    #[cfg(feature = "base58")]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.to_base58())
+    }
+
+    #[cfg(not(feature = "base58"))]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Signature")
             .field("bytes", &hex::encode(&self.0[..8]))

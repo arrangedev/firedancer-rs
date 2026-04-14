@@ -1,0 +1,24 @@
+[package]
+name = "fd_rpc"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fd_rpc_sys = { path = "../fd_rpc_sys" }
+fd_base64 = { path = "../../../ballet/base64/fd_base64" }
+fd_ed25519 = { path = "../../../ballet/ed25519/fd_ed25519", features = ["base58"] }
+libc = "0.2"
+
+[[example]]
+name = "run"
+
+[[bench]]
+name = "reqres"
+harness = false
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[features]
+default = []
+xdp = ["fd_rpc_sys/xdp"]

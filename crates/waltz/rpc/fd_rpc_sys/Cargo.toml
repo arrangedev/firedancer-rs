@@ -1,0 +1,16 @@
+[package]
+name = "fd_rpc_sys"
+version.workspace = true
+edition.workspace = true
+build = "build.rs"
+links = "fdrpc"
+
+[features]
+default = []
+xdp = []
+
+[build-dependencies]
+cc = "1"
+bindgen = "0.72.1"
+pkg-config = "0.3"
+firedancer-rs-common = { path = "../../../common" }

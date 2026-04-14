@@ -11,7 +11,7 @@ libc = "0.2"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]
-name = "benchmarks"
+name = "timing"
 harness = false
 
 [[example]]

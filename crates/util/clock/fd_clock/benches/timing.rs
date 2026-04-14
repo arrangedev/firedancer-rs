@@ -60,19 +60,34 @@ fn observer_benches(c: &mut Criterion) {
 
     g.bench_function("clock_gettime_realtime", |b| {
         b.iter(|| {
-            let mut ts = core::mem::MaybeUninit::<libc::timespec>::uninit();
-            unsafe { libc::clock_gettime(libc::CLOCK_REALTIME, ts.as_mut_ptr()) };
-            let ts = unsafe { ts.assume_init() };
-            black_box(ts.tv_sec * 1_000_000_000 + ts.tv_nsec)
+            black_box(|| {
+                let mut ts = core::mem::MaybeUninit::<libc::timespec>::uninit();
+                unsafe { libc::clock_gettime(libc::CLOCK_REALTIME, ts.as_mut_ptr()) };
+                let ts = unsafe { ts.assume_init() };
+                ts.tv_sec * 1_000_000_000 + ts.tv_nsec
+            })
         });
     });
 
     g.bench_function("clock_gettime_monotonic_raw", |b| {
         b.iter(|| {
-            let mut ts = core::mem::MaybeUninit::<libc::timespec>::uninit();
-            unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC_RAW, ts.as_mut_ptr()) };
-            let ts = unsafe { ts.assume_init() };
-            black_box(ts.tv_sec * 1_000_000_000 + ts.tv_nsec)
+            black_box(|| {
+                let mut ts = core::mem::MaybeUninit::<libc::timespec>::uninit();
+                unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC_RAW, ts.as_mut_ptr()) };
+                let ts = unsafe { ts.assume_init() };
+                ts.tv_sec * 1_000_000_000 + ts.tv_nsec
+            })
+        });
+    });
+
+    g.bench_function("std::SystemTime::now", |b| {
+        b.iter(|| {
+            black_box(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos(),
+            )
         });
     });
 
