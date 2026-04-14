@@ -22,6 +22,62 @@ pub struct AccountMeta {
     pub is_writable: bool,
 }
 
+impl AccountMeta {
+    #[inline]
+    pub fn new(pubkey: Pubkey, is_signer: bool, is_writable: bool) -> Self {
+        Self {
+            pubkey,
+            is_signer,
+            is_writable,
+        }
+    }
+
+    #[inline]
+    pub fn readonly(pubkey: Pubkey) -> Self {
+        Self {
+            pubkey,
+            is_signer: false,
+            is_writable: false,
+        }
+    }
+
+    #[inline]
+    pub fn writable(pubkey: Pubkey) -> Self {
+        Self {
+            pubkey,
+            is_signer: false,
+            is_writable: true,
+        }
+    }
+
+    #[inline]
+    pub fn signer(pubkey: Pubkey) -> Self {
+        Self {
+            pubkey,
+            is_signer: true,
+            is_writable: false,
+        }
+    }
+
+    #[inline]
+    pub fn writable_signer(pubkey: Pubkey) -> Self {
+        Self {
+            pubkey,
+            is_signer: true,
+            is_writable: true,
+        }
+    }
+
+    #[inline]
+    pub fn readonly_signer(pubkey: Pubkey) -> Self {
+        Self {
+            pubkey,
+            is_signer: true,
+            is_writable: false,
+        }
+    }
+}
+
 pub struct InstructionBuf<'a> {
     pub program_id: Pubkey,
     pub accounts: &'a [AccountMeta],
