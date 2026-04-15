@@ -78,10 +78,36 @@ impl AccountMeta {
     }
 }
 
+pub struct OwnedInstruction {
+    pub program_id: Pubkey,
+    pub accounts: Vec<AccountMeta>,
+    pub data: Vec<u8>,
+}
+
+impl OwnedInstruction {
+    pub fn new(program_id: Pubkey, accounts: Vec<AccountMeta>, data: Vec<u8>) -> Self {
+        Self {
+            program_id,
+            accounts,
+            data,
+        }
+    }
+}
+
 pub struct InstructionBuf<'a> {
     pub program_id: Pubkey,
     pub accounts: &'a [AccountMeta],
     pub data: &'a [u8],
+}
+
+impl<'a> From<&'a OwnedInstruction> for InstructionBuf<'a> {
+    fn from(ix: &'a OwnedInstruction) -> Self {
+        Self {
+            program_id: ix.program_id,
+            accounts: ix.accounts.as_slice(),
+            data: ix.data.as_slice(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
