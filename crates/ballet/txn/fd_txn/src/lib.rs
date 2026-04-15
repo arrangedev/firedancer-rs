@@ -58,7 +58,8 @@
 pub mod builder;
 
 pub use builder::{
-    AccountMeta, BuildError, InstructionBuf, TransactionBuilder, UnsignedTransaction,
+    AccountMeta, BuildError, InstructionBuf, OwnedInstruction, TransactionBuilder,
+    UnsignedTransaction,
 };
 
 use core::fmt;
