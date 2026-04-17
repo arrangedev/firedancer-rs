@@ -268,8 +268,8 @@ impl BatchEntry {
     }
 
     #[inline]
-    pub fn get_token_account_balance(pubkey: &[u8; 32], commitment: Commitment) -> Self {
-        let pubkey_b58 = fd_ed25519::base58::encode_32(pubkey);
+    pub fn get_token_account_balance(pubkey: Pubkey, commitment: Commitment) -> Self {
+        let pubkey_b58 = pubkey.to_base58();
         let mut params = [0u8; 256];
         let len = fmt_pubkey_commitment_params(&mut params, &pubkey_b58, commitment);
         Self {
@@ -309,6 +309,52 @@ impl<'a> BatchResults<'a> {
             .into_iter()
             .flatten()
             .map(parse_batch_item)
+    }
+
+    fn result_at(&self, index: usize) -> Result<JsonScan<'a>, RpcError> {
+        self.get(index).map_err(RpcError::JsonRpc)
+    }
+
+    pub fn get_blockhash(&self, index: usize) -> Result<Blockhash, RpcError> {
+        parse_blockhash_result(&self.result_at(index)?)
+    }
+
+    pub fn get_u64(&self, index: usize) -> Result<u64, RpcError> {
+        parse_u64_result(&self.result_at(index)?)
+    }
+
+    pub fn get_balance(&self, index: usize) -> Result<u64, RpcError> {
+        parse_balance_result(&self.result_at(index)?)
+    }
+
+    pub fn get_health(&self, index: usize) -> Result<(), RpcError> {
+        parse_health_result(&self.result_at(index)?)
+    }
+
+    pub fn get_version(&self, index: usize) -> Result<Version, RpcError> {
+        parse_version_result(&self.result_at(index)?)
+    }
+
+    pub fn get_account_info(&self, index: usize) -> Result<Option<AccountInfo>, RpcError> {
+        parse_account_info_result(&self.result_at(index)?)
+    }
+
+    pub fn get_multiple_accounts(
+        &self,
+        index: usize,
+    ) -> Result<Vec<Option<AccountInfo>>, RpcError> {
+        parse_multiple_accounts_result(&self.result_at(index)?)
+    }
+
+    pub fn get_program_accounts(
+        &self,
+        index: usize,
+    ) -> Result<Vec<([u8; 32], AccountInfo)>, RpcError> {
+        parse_program_accounts_result(&self.result_at(index)?)
+    }
+
+    pub fn get_token_balance(&self, index: usize) -> Result<TokenBalance, RpcError> {
+        parse_token_balance_result(&self.result_at(index)?)
     }
 }
 
@@ -538,32 +584,8 @@ impl SolanaRpcClient {
     pub fn get_latest_blockhash(&mut self, commitment: Commitment) -> Result<Blockhash, RpcError> {
         let mut params = [0u8; 128];
         let params_len = fmt_commitment_params(&mut params, commitment);
-
         let resp = self.call("getLatestBlockhash", &params[..params_len])?;
-        let result = resp.result();
-
-        let value = result
-            .field("value")
-            .ok_or(RpcError::BadResponse("result.value missing"))?;
-
-        let blockhash_str = value
-            .field("blockhash")
-            .and_then(|v| v.as_str())
-            .ok_or(RpcError::BadResponse("missing blockhash"))?;
-
-        let last_valid = value
-            .field("lastValidBlockHeight")
-            .and_then(|v| v.as_f64())
-            .map(|n| n as u64)
-            .ok_or(RpcError::BadResponse("missing lastValidBlockHeight"))?;
-
-        let hash = fd_ed25519::base58::decode_32(blockhash_str)
-            .map_err(|_| RpcError::Base58DecodeFailed)?;
-
-        Ok(Blockhash {
-            hash,
-            last_valid_block_height: last_valid,
-        })
+        parse_blockhash_result(resp.result())
     }
 
     pub fn get_balance(
@@ -572,22 +594,10 @@ impl SolanaRpcClient {
         commitment: Commitment,
     ) -> Result<u64, RpcError> {
         let pubkey_b58 = fd_ed25519::base58::encode_32(pubkey);
-
         let mut params = [0u8; 256];
         let params_len = fmt_pubkey_commitment_params(&mut params, &pubkey_b58, commitment);
-
         let resp = self.call("getBalance", &params[..params_len])?;
-        let result = resp.result();
-
-        if result.is_object() {
-            result
-                .field("value")
-                .and_then(|v| v.as_f64())
-                .map(|n| n as u64)
-                .ok_or(RpcError::BadResponse("missing value"))
-        } else {
-            resp.result_u64().map_err(|e| e.into())
-        }
+        parse_balance_result(resp.result())
     }
 
     pub fn send_transaction(
@@ -614,7 +624,7 @@ impl SolanaRpcClient {
         let mut params = [0u8; 128];
         let params_len = fmt_commitment_params(&mut params, commitment);
         let resp = self.call("getTransactionCount", &params[..params_len])?;
-        resp.result_u64().map_err(|e| e.into())
+        parse_u64_result(resp.result())
     }
 
     #[inline]
@@ -622,7 +632,7 @@ impl SolanaRpcClient {
         let mut params = [0u8; 128];
         let params_len = fmt_commitment_params(&mut params, commitment);
         let resp = self.call("getSlot", &params[..params_len])?;
-        resp.result_u64().map_err(|e| e.into())
+        parse_u64_result(resp.result())
     }
 
     #[inline]
@@ -630,44 +640,19 @@ impl SolanaRpcClient {
         let mut params = [0u8; 128];
         let params_len = fmt_commitment_params(&mut params, commitment);
         let resp = self.call("getBlockHeight", &params[..params_len])?;
-        resp.result_u64().map_err(|e| e.into())
+        parse_u64_result(resp.result())
     }
 
     #[inline]
     pub fn get_health(&mut self) -> Result<(), RpcError> {
         let resp = self.call("getHealth", b"[]")?;
-        let _ = resp.result_string()?;
-        Ok(())
+        parse_health_result(resp.result())
     }
 
     #[inline]
     pub fn get_version(&mut self) -> Result<Version, RpcError> {
         let resp = self.call("getVersion", b"[]")?;
-        let result = resp.result();
-
-        if !result.is_object() {
-            return Err(RpcError::BadResponse("result is not an object"));
-        }
-
-        let core_str = result
-            .field("solana-core")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
-        let feature_set = result
-            .field("feature-set")
-            .and_then(|v| v.as_f64())
-            .map(|n| n as u64)
-            .unwrap_or(0);
-
-        let mut version = Version {
-            solana_core: [0u8; 64],
-            solana_core_len: core_str.len().min(63),
-            feature_set,
-        };
-        version.solana_core[..version.solana_core_len]
-            .copy_from_slice(&core_str.as_bytes()[..version.solana_core_len]);
-
-        Ok(version)
+        parse_version_result(resp.result())
     }
 
     #[inline]
@@ -679,19 +664,8 @@ impl SolanaRpcClient {
         let pubkey_b58 = pubkey.to_base58();
         let mut params = [0u8; 256];
         let params_len = fmt_account_info_params(&mut params, &pubkey_b58, commitment);
-
         let resp = self.call("getAccountInfo", &params[..params_len])?;
-        let result = resp.result();
-
-        let value = result
-            .field("value")
-            .ok_or(RpcError::BadResponse("result.value missing"))?;
-
-        if value.is_null() {
-            return Ok(None);
-        }
-
-        parse_account_info(&value).map(Some)
+        parse_account_info_result(resp.result())
     }
 
     #[inline]
@@ -703,27 +677,8 @@ impl SolanaRpcClient {
         let pubkeys_b58 = pubkeys.iter().map(|p| p.to_base58()).collect::<Vec<_>>();
         let mut params = vec![0u8; 128 + pubkeys_b58.len() * 64];
         let params_len = fmt_multiple_accounts_params(&mut params, &pubkeys_b58, commitment);
-
         let resp = self.call("getMultipleAccounts", &params[..params_len])?;
-        let result = resp.result();
-
-        let values = result
-            .field("value")
-            .ok_or(RpcError::BadResponse("result.value missing"))?;
-
-        let iter = values
-            .array_iter()
-            .ok_or(RpcError::BadResponse("result.value is not an array"))?;
-
-        let mut out = Vec::with_capacity(16);
-        for item in iter {
-            if item.is_null() {
-                out.push(None);
-            } else {
-                out.push(Some(parse_account_info(&item)?));
-            }
-        }
-        Ok(out)
+        parse_multiple_accounts_result(resp.result())
     }
 
     #[inline]
@@ -735,78 +690,21 @@ impl SolanaRpcClient {
         let program_b58 = program_id.to_base58();
         let mut params = [0u8; 256];
         let params_len = fmt_account_info_params(&mut params, &program_b58, commitment);
-
         let resp = self.call("getProgramAccounts", &params[..params_len])?;
-        let result = resp.result();
-
-        let iter = result
-            .array_iter()
-            .ok_or(RpcError::BadResponse("result is not an array"))?;
-
-        let mut out = Vec::with_capacity(16);
-        for entry in iter {
-            let pubkey_str = entry
-                .field("pubkey")
-                .and_then(|v| v.as_str())
-                .ok_or(RpcError::BadResponse("missing pubkey in entry"))?;
-            let pubkey = fd_ed25519::base58::decode_32(pubkey_str)
-                .map_err(|_| RpcError::Base58DecodeFailed)?;
-
-            let account = entry
-                .field("account")
-                .ok_or(RpcError::BadResponse("missing account in entry"))?;
-            let info = parse_account_info(&account)?;
-            out.push((pubkey, info));
-        }
-        Ok(out)
+        parse_program_accounts_result(resp.result())
     }
 
     #[inline]
     pub fn get_token_account_balance(
         &mut self,
-        pubkey: &[u8; 32],
+        pubkey: Pubkey,
         commitment: Commitment,
     ) -> Result<TokenBalance, RpcError> {
-        let pubkey_b58 = fd_ed25519::base58::encode_32(pubkey);
+        let pubkey_b58 = pubkey.to_base58();
         let mut params = [0u8; 256];
         let params_len = fmt_pubkey_commitment_params(&mut params, &pubkey_b58, commitment);
-
         let resp = self.call("getTokenAccountBalance", &params[..params_len])?;
-        let result = resp.result();
-
-        let value = result
-            .field("value")
-            .ok_or(RpcError::BadResponse("result.value missing"))?;
-
-        let amount_str = value
-            .field("amount")
-            .and_then(|v| v.as_str())
-            .ok_or(RpcError::BadResponse("missing amount"))?;
-        let amount: u64 = amount_str
-            .parse()
-            .map_err(|_| RpcError::BadResponse("amount is not a u64"))?;
-
-        let decimals = value
-            .field("decimals")
-            .and_then(|v| v.as_f64())
-            .map(|n| n as u8)
-            .ok_or(RpcError::BadResponse("missing decimals"))?;
-
-        let ui_str = value
-            .field("uiAmountString")
-            .and_then(|v| v.as_str())
-            .unwrap_or("0");
-
-        let mut tb = TokenBalance {
-            amount,
-            decimals,
-            ui_amount_string: [0u8; 64],
-            ui_amount_string_len: ui_str.len().min(63),
-        };
-        tb.ui_amount_string[..tb.ui_amount_string_len]
-            .copy_from_slice(&ui_str.as_bytes()[..tb.ui_amount_string_len]);
-
-        Ok(tb)
+        parse_token_balance_result(resp.result())
     }
 
     pub fn batch(&mut self, entries: &[BatchEntry]) -> Result<BatchResults<'_>, RpcError> {
@@ -882,6 +780,160 @@ impl SolanaRpcClient {
 
         Ok(w.pos())
     }
+}
+
+fn parse_blockhash_result(result: &JsonScan<'_>) -> Result<Blockhash, RpcError> {
+    let value = result
+        .field("value")
+        .ok_or(RpcError::BadResponse("result.value missing"))?;
+    let blockhash_str = value
+        .field("blockhash")
+        .and_then(|v| v.as_str())
+        .ok_or(RpcError::BadResponse("missing blockhash"))?;
+    let last_valid = value
+        .field("lastValidBlockHeight")
+        .and_then(|v| v.as_f64())
+        .map(|n| n as u64)
+        .ok_or(RpcError::BadResponse("missing lastValidBlockHeight"))?;
+    let hash =
+        fd_ed25519::base58::decode_32(blockhash_str).map_err(|_| RpcError::Base58DecodeFailed)?;
+    Ok(Blockhash {
+        hash,
+        last_valid_block_height: last_valid,
+    })
+}
+
+fn parse_u64_result(result: &JsonScan<'_>) -> Result<u64, RpcError> {
+    result
+        .as_f64()
+        .map(|n| n as u64)
+        .ok_or(RpcError::BadResponse("expected number"))
+}
+
+fn parse_balance_result(result: &JsonScan<'_>) -> Result<u64, RpcError> {
+    if result.is_object() {
+        result
+            .field("value")
+            .and_then(|v| v.as_f64())
+            .map(|n| n as u64)
+            .ok_or(RpcError::BadResponse("missing value"))
+    } else {
+        parse_u64_result(result)
+    }
+}
+
+fn parse_health_result(result: &JsonScan<'_>) -> Result<(), RpcError> {
+    let _ = result
+        .as_str()
+        .ok_or(RpcError::BadResponse("expected string"))?;
+    Ok(())
+}
+
+fn parse_version_result(result: &JsonScan<'_>) -> Result<Version, RpcError> {
+    if !result.is_object() {
+        return Err(RpcError::BadResponse("result is not an object"));
+    }
+    let core_str = result
+        .field("solana-core")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let feature_set = result
+        .field("feature-set")
+        .and_then(|v| v.as_f64())
+        .map(|n| n as u64)
+        .unwrap_or(0);
+    let mut version = Version {
+        solana_core: [0u8; 64],
+        solana_core_len: core_str.len().min(63),
+        feature_set,
+    };
+    version.solana_core[..version.solana_core_len]
+        .copy_from_slice(&core_str.as_bytes()[..version.solana_core_len]);
+    Ok(version)
+}
+
+fn parse_account_info_result(result: &JsonScan<'_>) -> Result<Option<AccountInfo>, RpcError> {
+    let value = result
+        .field("value")
+        .ok_or(RpcError::BadResponse("result.value missing"))?;
+    if value.is_null() {
+        return Ok(None);
+    }
+    parse_account_info(&value).map(Some)
+}
+
+fn parse_multiple_accounts_result(
+    result: &JsonScan<'_>,
+) -> Result<Vec<Option<AccountInfo>>, RpcError> {
+    let values = result
+        .field("value")
+        .ok_or(RpcError::BadResponse("result.value missing"))?;
+    let iter = values
+        .array_iter()
+        .ok_or(RpcError::BadResponse("result.value is not an array"))?;
+    let mut out = Vec::with_capacity(16);
+    for item in iter {
+        if item.is_null() {
+            out.push(None);
+        } else {
+            out.push(Some(parse_account_info(&item)?));
+        }
+    }
+    Ok(out)
+}
+
+fn parse_program_accounts_result(
+    result: &JsonScan<'_>,
+) -> Result<Vec<([u8; 32], AccountInfo)>, RpcError> {
+    let iter = result
+        .array_iter()
+        .ok_or(RpcError::BadResponse("result is not an array"))?;
+    let mut out = Vec::with_capacity(16);
+    for entry in iter {
+        let pubkey_str = entry
+            .field("pubkey")
+            .and_then(|v| v.as_str())
+            .ok_or(RpcError::BadResponse("missing pubkey in entry"))?;
+        let pubkey =
+            fd_ed25519::base58::decode_32(pubkey_str).map_err(|_| RpcError::Base58DecodeFailed)?;
+        let account = entry
+            .field("account")
+            .ok_or(RpcError::BadResponse("missing account in entry"))?;
+        let info = parse_account_info(&account)?;
+        out.push((pubkey, info));
+    }
+    Ok(out)
+}
+
+fn parse_token_balance_result(result: &JsonScan<'_>) -> Result<TokenBalance, RpcError> {
+    let value = result
+        .field("value")
+        .ok_or(RpcError::BadResponse("result.value missing"))?;
+    let amount_str = value
+        .field("amount")
+        .and_then(|v| v.as_str())
+        .ok_or(RpcError::BadResponse("missing amount"))?;
+    let amount: u64 = amount_str
+        .parse()
+        .map_err(|_| RpcError::BadResponse("amount is not a u64"))?;
+    let decimals = value
+        .field("decimals")
+        .and_then(|v| v.as_f64())
+        .map(|n| n as u8)
+        .ok_or(RpcError::BadResponse("missing decimals"))?;
+    let ui_str = value
+        .field("uiAmountString")
+        .and_then(|v| v.as_str())
+        .unwrap_or("0");
+    let mut tb = TokenBalance {
+        amount,
+        decimals,
+        ui_amount_string: [0u8; 64],
+        ui_amount_string_len: ui_str.len().min(63),
+    };
+    tb.ui_amount_string[..tb.ui_amount_string_len]
+        .copy_from_slice(&ui_str.as_bytes()[..tb.ui_amount_string_len]);
+    Ok(tb)
 }
 
 fn parse_account_info(value: &JsonScan<'_>) -> Result<AccountInfo, RpcError> {
