@@ -569,15 +569,13 @@ impl SolanaRpcClient {
         http::write_request(&mut self.conn, "POST", path, host, "application/json", req)?;
 
         let timeout = self.timeout_ns;
-        let scratch_base = self.scratch.as_ptr() as usize;
-        let resp = http::read_response(&mut self.scratch, &mut self.conn, timeout)?;
+        let (status, body_offset, body_len) =
+            http::read_response(&mut self.scratch, &mut self.conn, timeout)?;
 
-        if resp.status != 200 {
-            return Err(RpcError::Http(http::HttpError::BadStatus(resp.status)));
+        if status != 200 {
+            return Err(RpcError::Http(http::HttpError::BadStatus(status)));
         }
 
-        let body_offset = resp.body.as_ptr() as usize - scratch_base;
-        let body_len = resp.body.len();
         Ok((body_offset, body_len))
     }
 
@@ -731,15 +729,12 @@ impl SolanaRpcClient {
         )?;
 
         let timeout = self.timeout_ns;
-        let scratch_base = self.scratch.as_ptr() as usize;
-        let resp = http::read_response(&mut self.scratch, &mut self.conn, timeout)?;
+        let (status, body_offset, body_len) =
+            http::read_response(&mut self.scratch, &mut self.conn, timeout)?;
 
-        if resp.status != 200 {
-            return Err(RpcError::Http(http::HttpError::BadStatus(resp.status)));
+        if status != 200 {
+            return Err(RpcError::Http(http::HttpError::BadStatus(status)));
         }
-
-        let body_offset = resp.body.as_ptr() as usize - scratch_base;
-        let body_len = resp.body.len();
 
         Ok(BatchResults {
             data: &self.scratch[body_offset..body_offset + body_len],

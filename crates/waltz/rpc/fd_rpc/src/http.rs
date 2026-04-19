@@ -31,11 +31,6 @@ impl fmt::Display for HttpError {
 
 impl core::error::Error for HttpError {}
 
-pub struct HttpResponse<'a> {
-    pub status: u16,
-    pub body: &'a [u8],
-}
-
 pub fn write_request(
     conn: &mut Connection,
     method: &str,
@@ -97,11 +92,13 @@ fn fmt_request_header(
     Some(w.pos())
 }
 
-pub fn read_response<'a>(
-    scratch: &'a mut [u8],
+/// Returns `(status, body_offset, body_len)`. Grows `scratch` when the
+/// response body exceeds the current capacity.
+pub fn read_response(
+    scratch: &mut Vec<u8>,
     conn: &mut Connection,
     timeout_ns: i64,
-) -> Result<HttpResponse<'a>, HttpError> {
+) -> Result<(u16, usize, usize), HttpError> {
     let start = utils::monotonic_ns();
     let mut filled = 0usize;
 
@@ -129,10 +126,10 @@ pub fn read_response<'a>(
 
     if let Some(cl) = header_info.content_length {
         let total = header_info.header_len + cl;
+        if total > scratch.len() {
+            scratch.resize(total, 0);
+        }
         while filled < total {
-            if filled >= scratch.len() {
-                return Err(HttpError::ResponseTooLarge);
-            }
             let r = conn.pump();
             if r.closed || r.error {
                 return Err(HttpError::ConnectionClosed);
@@ -144,28 +141,28 @@ pub fn read_response<'a>(
                 return Err(HttpError::ResponseIncomplete);
             }
         }
-        Ok(HttpResponse {
-            status: header_info.status,
-            body: &scratch[header_info.header_len..total],
-        })
+        Ok((header_info.status, header_info.header_len, cl))
     } else if header_info.is_chunked {
         read_chunked_body(scratch, filled, &header_info, conn, start, timeout_ns)
     } else {
-        Ok(HttpResponse {
-            status: header_info.status,
-            body: &scratch[header_info.header_len..filled],
-        })
+        Ok((
+            header_info.status,
+            header_info.header_len,
+            filled - header_info.header_len,
+        ))
     }
 }
 
-fn read_chunked_body<'a>(
-    scratch: &'a mut [u8],
+fn read_chunked_body(
+    scratch: &mut Vec<u8>,
     filled: usize,
     info: &HeaderInfo,
     conn: &mut Connection,
     start: u64,
     timeout_ns: i64,
-) -> Result<HttpResponse<'a>, HttpError> {
+) -> Result<(u16, usize, usize), HttpError> {
+    const MIN_HEADROOM: usize = 4096;
+
     let mut decoder: sys::phr_chunked_decoder = unsafe { core::mem::zeroed() };
     decoder.consume_trailer = 1;
 
@@ -184,10 +181,7 @@ fn read_chunked_body<'a>(
         };
         decoded_total = bufsz;
         if pret >= 0 {
-            return Ok(HttpResponse {
-                status: info.status,
-                body: &scratch[body_start..body_start + decoded_total],
-            });
+            return Ok((info.status, body_start, decoded_total));
         }
         if pret == -1 {
             return Err(HttpError::ResponseMalformed);
@@ -200,6 +194,9 @@ fn read_chunked_body<'a>(
             return Err(HttpError::ConnectionClosed);
         }
         let write_at = body_start + decoded_total;
+        if scratch.len() - write_at < MIN_HEADROOM {
+            scratch.resize(scratch.len() * 2, 0);
+        }
         let n = conn.rx_pop(&mut scratch[write_at..]);
         if n > 0 {
             let mut bufsz = n;
@@ -212,16 +209,10 @@ fn read_chunked_body<'a>(
             };
             decoded_total += bufsz;
             if pret >= 0 {
-                return Ok(HttpResponse {
-                    status: info.status,
-                    body: &scratch[body_start..body_start + decoded_total],
-                });
+                return Ok((info.status, body_start, decoded_total));
             }
             if pret == -1 {
                 return Err(HttpError::ResponseMalformed);
-            }
-            if body_start + decoded_total >= scratch.len() {
-                return Err(HttpError::ResponseTooLarge);
             }
         } else if timeout_ns >= 0 && (utils::monotonic_ns() - start) as i64 >= timeout_ns {
             return Err(HttpError::ResponseIncomplete);
